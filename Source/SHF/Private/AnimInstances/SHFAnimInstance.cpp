@@ -3,6 +3,7 @@
 
 #include "AnimInstances/SHFAnimInstance.h"
 
+#include "KismetAnimationLibrary.h"
 #include "AnimInstances/SHFLayerAnimInstance.h"
 #include "SHF/Components/AnimComponent.h"
 
@@ -46,9 +47,9 @@ void USHFAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	NewData.TurnState = AnimComp->CurrentTurnState;
 	NewData.RootYawOffset = AnimComp->RootYawOffset;
 	
+	CalculateMovementDirection(DeltaSeconds, NewData);
 	
-	FSHFSharedAnimData SharedData;
-	SharedData.GroundSpeed = OwningPawn->GetVelocity().Size2D();
+	FSHFSharedAnimData SharedData = NewData;
 	//SharedData.TurnState = AnimComp->CurrentTurnState;
 	//SharedData.RootYawOffset = AnimComp->RootYawOffset;
 
@@ -68,4 +69,43 @@ void USHFAnimInstance::RegisterLayer(USHFLayerAnimInstance* Layer)
 	});
 
 	LinkedLayers.AddUnique(Layer);	
+}
+
+void USHFAnimInstance::CalculateMovementDirection(float DeltaSeconds, FSHFSharedAnimData& OutData)
+{
+	FVector Velocity = OwningPawn->GetVelocity();
+	FRotator Rotation = OwningPawn->GetActorRotation();
+
+	// 1. Roh-Winkel berechnen (-180 bis 180)
+	float RawAngle = UKismetAnimationLibrary::CalculateDirection(Velocity, Rotation);
+	OutData.LocomotionAngle = RawAngle;
+
+	// 2. Richtungs-Logik mit Hysterese (Buffer)
+	// Wir definieren Schwellenwerte, die sich je nach letzter Richtung verschieben
+	float Buffer = 10.0f; 
+	ESHFMovementDirection NewDir = LastMovementDirection;
+
+	// Vorwärts Check (Standardbereich -45 bis 45)
+	if (LastMovementDirection == ESHFMovementDirection::Forward) {
+		if (RawAngle > (45.f + Buffer)) NewDir = ESHFMovementDirection::Right;
+		else if (RawAngle < (-45.f - Buffer)) NewDir = ESHFMovementDirection::Left;
+	}
+	// Rechts Check
+	else if (LastMovementDirection == ESHFMovementDirection::Right) {
+		if (RawAngle < (45.f - Buffer)) NewDir = ESHFMovementDirection::Forward;
+		else if (RawAngle > (135.f + Buffer)) NewDir = ESHFMovementDirection::Backward;
+	}
+	// Links Check
+	else if (LastMovementDirection == ESHFMovementDirection::Left) {
+		if (RawAngle > (-45.f + Buffer)) NewDir = ESHFMovementDirection::Forward;
+		else if (RawAngle < (-135.f - Buffer)) NewDir = ESHFMovementDirection::Backward;
+	}
+	// Rückwärts Check
+	else if (LastMovementDirection == ESHFMovementDirection::Backward) {
+		if (RawAngle > 0.f && RawAngle < (135.f - Buffer)) NewDir = ESHFMovementDirection::Right;
+		else if (RawAngle < 0.f && RawAngle > (-135.f + Buffer)) NewDir = ESHFMovementDirection::Left;
+	}
+
+	OutData.MovementDirection = NewDir;
+	LastMovementDirection = NewDir; // State für nächsten Frame speichern
 }

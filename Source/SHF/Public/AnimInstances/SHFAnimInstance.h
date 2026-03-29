@@ -61,6 +61,13 @@ protected:
 	
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<USHFLayerAnimInstance>> LinkedLayers;
+	
+	// Speichert die letzte Richtung für die Hysterese
+	ESHFMovementDirection LastMovementDirection = ESHFMovementDirection::Forward;
 
+private:
+	void CalculateMovementDirection(float DeltaSeconds, FSHFSharedAnimData& OutData);
+	
+	
 	
 };

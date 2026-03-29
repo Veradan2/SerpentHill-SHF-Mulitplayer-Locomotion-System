@@ -67,29 +67,31 @@ void UAnimComponent::ApplyLayer(TSubclassOf<UAnimInstance> LayerClass)
 {
 	if (!OwningCharacter || !LayerClass) return;
 
-	if (USkeletalMeshComponent* Mesh = OwningCharacter->GetMesh())
+	USkeletalMeshComponent* Mesh = OwningCharacter->GetMesh();
+	if (Mesh)
 	{
-		// 1. Den neuen Layer verlinken
+		// 1. Den Link physikalisch herstellen
 		Mesh->LinkAnimClassLayers(LayerClass);
-        
-		// 2. WICHTIG FÜR DEN WECHSEL: 
-		// Wir holen die neue Instanz, die Unreal gerade erstellt hat
-		if (UAnimInstance* NewLayerInst = Mesh->GetLinkedAnimLayerInstanceByClass(LayerClass))
-		{
-			// 3. Registrierung in der MainInstance (damit die Daten dorthin fließen)
-			if (USHFAnimInstance* MainInst = Cast<USHFAnimInstance>(Mesh->GetAnimInstance()))
-			{
-				if (USHFLayerAnimInstance* SHF_Layer = Cast<USHFLayerAnimInstance>(NewLayerInst))
-				{
-					// Wir müssen die Liste in der MainInstance updaten!
-					MainInst->RegisterLayer(SHF_Layer);
-				}
-			}
-		}
 
-		// 4. Visuellen "Push" erzwingen
-		Mesh->InitAnim(true); 
-	}
+		// 2. Den Animator zwingen, die neue Struktur sofort zu laden
+		if (UAnimInstance* MainInst = Mesh->GetAnimInstance())
+		{
+			// Wir rufen NativeInitializeAnimation auf der MainInstance auf,
+			// damit unsere LinkedLayers-Liste (C++) sofort aktuell ist.
+			if (USHFAnimInstance* SHFMain = Cast<USHFAnimInstance>(MainInst))
+			{
+				SHFMain->NativeInitializeAnimation();
+			}
+
+			// DAS ist der Ersatz für RecalcRequiredCurves:
+			// Wir triggern ein sofortiges Update der Skelett-Struktur
+			MainInst->UpdateAnimation(0.f, false);
+		}
+		
+		// 3. Mesh-Transforms auffrischen, damit die Pose im selben Frame stimmt
+		Mesh->RefreshBoneTransforms();
+	}	
+	
 }
 
 void UAnimComponent::BeginPlay()
@@ -113,18 +115,19 @@ void UAnimComponent::BeginPlay()
 void UAnimComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-	
-	// --- INITIALER LAYER-CHECK ---
+
 	if (!bInitialLayerLinked)
 	{
-		// Prüfen, ob Mesh und AnimInstance schon existieren
+		// Prüfen ob alles bereit ist
 		if (OwningCharacter && OwningCharacter->GetMesh() && OwningCharacter->GetMesh()->GetAnimInstance())
 		{
-			// Wir rufen OnRep manuell auf, um den Initial-Layer zu laden
-			OnRep_CurrentLayerTag();
-			bInitialLayerLinked = true; 
-            
-			UE_LOG(LogTemp, Log, TEXT("SHF: Initialer Layer erfolgreich verlinkt in Tick."));
+			// Wir prüfen, ob bereits ein Layer-Tag gesetzt wurde (z.B. durch OnRep)
+			if (CurrentLayerTag != ESHFAnimLayerTag::None) 
+			{
+				OnRep_CurrentLayerTag();
+				bInitialLayerLinked = true;
+				UE_LOG(LogTemp, Log, TEXT("SHF: Initialer Layer in Tick verlinkt."));
+			}
 		}
 	}	
 }
