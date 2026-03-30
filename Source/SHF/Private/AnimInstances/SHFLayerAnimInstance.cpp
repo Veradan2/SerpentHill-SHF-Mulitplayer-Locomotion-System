@@ -85,6 +85,46 @@ void USHFLayerAnimInstance::Idle_OnUpdate(const FAnimUpdateContext& Context, con
 	
 }
 
+void USHFLayerAnimInstance::Movement_OnUpdate(const FAnimUpdateContext& Context, const FAnimNodeReference& Node)
+{
+	EAnimNodeReferenceConversionResult Result;
+	FSequencePlayerReference Player = USequencePlayerLibrary::ConvertToSequencePlayer(Node, Result);
+    
+	if (Result == EAnimNodeReferenceConversionResult::Succeeded)
+	{
+		// 1. Ziel-Animation basierend auf der Richtung bestimmen
+		UAnimSequence* TargetAnim = nullptr;
+		if (FCardinalAnimationSet* Set = MovementAnims.Find(SharedData.Gait))
+		{
+			TargetAnim = Set->SelectAnim(SharedData.MovementDirection);
+		}
+
+		if (TargetAnim)
+		{
+			// 2. WICHTIGSTER CHECK: Was spielt gerade?
+			UAnimSequenceBase* CurrentAnim = USequencePlayerLibrary::GetSequencePure(Player);
+            
+			// NUR wenn die neue Animation eine ANDERE ist als die aktuelle,
+			// rufen wir SetSequence auf. Das verhindert den Dauer-Reset!
+			if (CurrentAnim != TargetAnim)
+			{
+				USequencePlayerLibrary::SetSequenceWithInertialBlending(Context, Player, TargetAnim, 0.2f);
+                
+				// Debug-Log: Erscheint dieser Log nur beim Richtungswechsel? 
+				// Wenn er durchgehend spamt, stimmt der Vergleich != nicht.
+				UE_LOG(LogTemp, Log, TEXT("SHF: Richtung gewechselt zu %s"), *TargetAnim->GetName());
+			}
+		}
+
+		// 3. PlayRate setzen (Darf jeden Frame passieren, da es die Zeit nicht zurücksetzt)
+		// Lyra Walk ist ca. 160 units/s, Run ca. 380 units/s
+		float RefSpeed = (SharedData.Gait == ESHFGait::Walk) ? 160.f : 480.f;
+		
+		float SafePlayRate = FMath::Max(0.1f, SharedData.GroundSpeed / RefSpeed);
+		USequencePlayerLibrary::SetPlayRate(Player, SafePlayRate);
+	}	
+}
+
 void USHFLayerAnimInstance::CalculateIdleIndex()
 {
 	const UWorld* World = GetWorld();

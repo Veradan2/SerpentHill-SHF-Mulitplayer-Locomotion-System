@@ -36,6 +36,9 @@ protected:
 	UFUNCTION(BlueprintCallable, Category = "SHF|AnimNodeFunctions", meta = (BlueprintThreadSafe))
 	void Idle_OnUpdate(const FAnimUpdateContext& Context, const FAnimNodeReference& Node);
 	
+	UFUNCTION(BlueprintCallable, Category = "SHF|AnimNodeFunctions", meta = (BlueprintThreadSafe))
+	void Movement_OnUpdate(const FAnimUpdateContext& Context, const FAnimNodeReference& Node);
+	
 	
 		// Local copy of the data exchange struct (thread safe access possible)
 	UPROPERTY(BlueprintReadOnly, Category = "SHF|Data")
@@ -59,12 +62,8 @@ protected:
 	int32 IdleIndex = 0;
 	
 	// Eine Map, die pro Gangart (Walk, Run) ein Set von 4 Animationen speichert
-	UPROPERTY(EditDefaultsOnly, Category = "SHF|Locomotion")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SHF|Locomotion")
 	TMap<ESHFGait, FCardinalAnimationSet> MovementAnims;
-
-	// Die aktuell gewählte Animation (wird in C++ berechnet)
-	UPROPERTY(BlueprintReadOnly, Category = "SHF|Locomotion")
-	TObjectPtr<UAnimSequence> ActiveMovementAnim;
 	
 private:
 	double IdleActiveTimeStamp = 0.;

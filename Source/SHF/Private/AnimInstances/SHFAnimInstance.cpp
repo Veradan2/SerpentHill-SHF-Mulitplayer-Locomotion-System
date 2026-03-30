@@ -46,6 +46,12 @@ void USHFAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	NewData.bIsMoving = NewData.GroundSpeed > 10.f;
 	NewData.TurnState = AnimComp->CurrentTurnState;
 	NewData.RootYawOffset = AnimComp->RootYawOffset;
+	NewData.Gait = ESHFGait::Run;
+	
+	NewData.LocomotionAngle = UKismetAnimationLibrary::CalculateDirection(OwningPawn->GetVelocity(), OwningPawn->GetActorRotation());
+	NewData.OrientationWarpingLocomotionAngle = -NewData.LocomotionAngle;
+	NewData.StrideWarpingLocomotionSpeed = NewData.GroundSpeed;
+	NewData.StrideWarpingAlpha = FMath::Clamp(NewData.GroundSpeed / 50.f, 0.f, 1.f);
 	
 	CalculateMovementDirection(DeltaSeconds, NewData);
 	
@@ -53,12 +59,25 @@ void USHFAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	//SharedData.TurnState = AnimComp->CurrentTurnState;
 	//SharedData.RootYawOffset = AnimComp->RootYawOffset;
 
+	FSHFAnimInstanceProxy& Proxy = GetProxyOnGameThread<FSHFAnimInstanceProxy>();
+	Proxy.SharedData = NewData;
+	
 	// 2. Daten an alle Layer "pushen"
 	for (USHFLayerAnimInstance* Layer : LinkedLayers) {
 		if (IsValid(Layer)) {
 			Layer->UpdateFromMain(SharedData);
 		}
 	}	
+}
+
+void USHFAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
+{
+	Super::NativeThreadSafeUpdateAnimation(DeltaSeconds);
+	
+	FSHFAnimInstanceProxy& Proxy = GetProxyOnAnyThread<FSHFAnimInstanceProxy>();
+	
+	bIdleToMovement = Proxy.SharedData.bIsMoving;
+	bMovementToIdle = !Proxy.SharedData.bIsMoving;
 }
 
 void USHFAnimInstance::RegisterLayer(USHFLayerAnimInstance* Layer)
@@ -69,6 +88,11 @@ void USHFAnimInstance::RegisterLayer(USHFLayerAnimInstance* Layer)
 	});
 
 	LinkedLayers.AddUnique(Layer);	
+}
+
+FAnimInstanceProxy* USHFAnimInstance::CreateAnimInstanceProxy()
+{
+	return new FSHFAnimInstanceProxy(this);
 }
 
 void USHFAnimInstance::CalculateMovementDirection(float DeltaSeconds, FSHFSharedAnimData& OutData)

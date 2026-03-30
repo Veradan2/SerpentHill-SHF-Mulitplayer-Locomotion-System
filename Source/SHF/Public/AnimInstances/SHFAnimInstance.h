@@ -23,13 +23,7 @@ struct FSHFAnimInstanceProxy : public FAnimInstanceProxy {
 
 	// Hier liegen die Kopien der Spieldaten
 	UPROPERTY(BlueprintReadOnly)
-	float GroundSpeed = 0.f;
-
-	UPROPERTY(BlueprintReadOnly)
-	ESHFTurnState CurrentTurnState = ESHFTurnState::None;
-
-	UPROPERTY(BlueprintReadOnly)
-	float RootYawOffset = 0.f;
+	FSHFSharedAnimData SharedData;
 
 	// Diese Funktion wird vom Anim-Thread aufgerufen
 	virtual void Update(float DeltaSeconds) override;
@@ -48,11 +42,15 @@ class SHF_API USHFAnimInstance : public UAnimInstance
 public:
 	virtual void NativeInitializeAnimation() override;
 	virtual void NativeUpdateAnimation(float DeltaSeconds) override;
+	virtual void NativeThreadSafeUpdateAnimation(float DeltaSeconds) override;
 	
 	void RegisterLayer(USHFLayerAnimInstance* Layer);
 	FORCEINLINE void UnregisterLayer(USHFLayerAnimInstance* OldLayer) { LinkedLayers.Remove(OldLayer); }
 	
 protected:
+	virtual FAnimInstanceProxy* CreateAnimInstanceProxy() override;
+	
+	
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "SHF|Core")
 	TObjectPtr<APawn> OwningPawn;
 
@@ -64,10 +62,16 @@ protected:
 	
 	// Speichert die letzte Richtung für die Hysterese
 	ESHFMovementDirection LastMovementDirection = ESHFMovementDirection::Forward;
+	
+	
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	bool bIdleToMovement = false;
+	
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+	bool bMovementToIdle = false;
+	
 
 private:
 	void CalculateMovementDirection(float DeltaSeconds, FSHFSharedAnimData& OutData);
-	
-	
 	
 };

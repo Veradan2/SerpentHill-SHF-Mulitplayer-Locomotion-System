@@ -89,7 +89,19 @@ struct FSHFSharedAnimData {
 	float LocomotionAngle = 0.f;
 	
 	UPROPERTY(BlueprintReadOnly, Category = "SHF|State")
+	ESHFGait Gait = ESHFGait::Run;
+	
+	UPROPERTY(BlueprintReadOnly, Category = "SHF|State")
 	ESHFMovementDirection MovementDirection = ESHFMovementDirection::Forward;
+	
+	UPROPERTY(BlueprintReadOnly, Category = "SHF|State")
+	float OrientationWarpingLocomotionAngle = 0.f; // 0 bis 1 (Wie stark soll gestreckt werden?)
+	
+	UPROPERTY(BlueprintReadOnly)
+	float StrideWarpingAlpha = 0.f; // 0 bis 1 (Wie stark soll gestreckt werden?)
+
+	UPROPERTY(BlueprintReadOnly)
+	float StrideWarpingLocomotionSpeed = 0.f; // Die tatsächliche Geschwindigkeit (cm/s)
 };
 
 
