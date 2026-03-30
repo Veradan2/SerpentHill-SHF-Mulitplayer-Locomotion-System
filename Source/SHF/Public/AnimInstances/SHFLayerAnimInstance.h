@@ -7,11 +7,36 @@
 #include "CoreMinimal.h"
 #include "SHFGlobals.h"
 #include "Animation/AnimInstance.h"
+#include "Animation/AnimInstanceProxy.h"
 #include "SHFLayerAnimInstance.generated.h"
 
 struct FAnimNodeReference;
 struct FAnimUpdateContext;
 struct FSHFSharedAnimData;
+
+
+
+/*
+ **		------	P R O X Y ------
+ */	
+USTRUCT()
+struct FSHFLayerAnimInstanceProxy : public FAnimInstanceProxy 
+{
+	
+	GENERATED_BODY()
+	FSHFLayerAnimInstanceProxy() : FAnimInstanceProxy() {}
+	FSHFLayerAnimInstanceProxy(UAnimInstance* InAnimInstance) : FAnimInstanceProxy(InAnimInstance) {}
+	
+    
+	// Die "Sammelstelle" für den Game-Thread
+	FSHFSharedAnimData SharedDataProxy;
+
+	virtual void Update(float DeltaSeconds) override {
+		FAnimInstanceProxy::Update(DeltaSeconds);
+	}
+};
+
+
 /**
  * The parent layer anim instance with the visual logic
  */
@@ -23,10 +48,16 @@ class SHF_API USHFLayerAnimInstance : public UAnimInstance
 public:
 	virtual void NativeInitializeAnimation() override;
 	virtual void NativeUpdateAnimation(float DeltaSeconds) override;
+	virtual void NativeThreadSafeUpdateAnimation(float DeltaSeconds) override;
 	
 	void UpdateFromMain(const FSHFSharedAnimData& NewData);
 	
 protected:
+	virtual FAnimInstanceProxy* CreateAnimInstanceProxy() override;
+	
+		
+		
+	
 	UFUNCTION(BlueprintCallable, Category = "SHF|AnimNodeFunctions", meta = (BlueprintThreadSafe))
 	void Idle_OnInitialUpdate(const FAnimUpdateContext& Context, const FAnimNodeReference& Node);
 	

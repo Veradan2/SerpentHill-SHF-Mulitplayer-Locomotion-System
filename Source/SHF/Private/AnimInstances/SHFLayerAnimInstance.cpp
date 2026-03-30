@@ -9,6 +9,10 @@
 #include "Engine/PackageMapClient.h"
 #include "GameFramework/GameStateBase.h"
 
+/*
+ **		------	LAYER ANIM INSTANCE ------
+ */	
+
 void USHFLayerAnimInstance::NativeInitializeAnimation()
 {
 	Super::NativeInitializeAnimation();
@@ -30,15 +34,30 @@ void USHFLayerAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	CalculateIdleIndex();
 }
 
+void USHFLayerAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
+{
+	Super::NativeThreadSafeUpdateAnimation(DeltaSeconds);
+	// Worker-Thread holt sich die Daten ab
+	const FSHFLayerAnimInstanceProxy& Proxy = GetProxyOnAnyThread<FSHFLayerAnimInstanceProxy>();
+    
+	// Hier spiegelst du die Daten in die lokale Variable für das AnimBP
+	SharedData = Proxy.SharedDataProxy;	
+}
+
 void USHFLayerAnimInstance::UpdateFromMain(const FSHFSharedAnimData& NewData)
 {
-
-	SharedData = NewData;
-
-	if (SharedData.bIsMoving)
+	FSHFLayerAnimInstanceProxy& Proxy = GetProxyOnGameThread<FSHFLayerAnimInstanceProxy>();
+	Proxy.SharedDataProxy = NewData;
+	
+	if (Proxy.SharedDataProxy.bIsMoving)
 		IdleActiveTimeStamp = GetWorld()->GetTimeSeconds(); //Reset
 	
 	OnDataUpdated();
+}
+
+FAnimInstanceProxy* USHFLayerAnimInstance::CreateAnimInstanceProxy()
+{
+	return new FSHFLayerAnimInstanceProxy(this);
 }
 
 void USHFLayerAnimInstance::Idle_OnInitialUpdate(const FAnimUpdateContext& Context, const FAnimNodeReference& Node)
