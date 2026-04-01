@@ -86,8 +86,16 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SHF|Idle")
 	TObjectPtr<UAnimSequence> IdleAnim;
 	
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SHF||Idle")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SHF|Idle")
 	TArray<TObjectPtr<UAnimSequence>> IdleBreaks;
+	
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SHF|TIP")
+	TObjectPtr<UAnimSequence> TurnLeft90Anim;
+	
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SHF|TIP")
+	TObjectPtr<UAnimSequence> TurnRight90Anim;
+	
+	
 	
 	UPROPERTY(BlueprintReadWrite)
 	int32 IdleIndex = 0;

@@ -24,6 +24,8 @@ struct FSHFAnimInstanceProxy : public FAnimInstanceProxy {
 	// Hier liegen die Kopien der Spieldaten
 	UPROPERTY(BlueprintReadOnly)
 	FSHFSharedAnimData SharedData;
+	
+	void SetRootYawOffset(float NewYawOffset);
 
 	// Diese Funktion wird vom Anim-Thread aufgerufen
 	virtual void Update(float DeltaSeconds) override;
@@ -46,6 +48,8 @@ public:
 	
 	void RegisterLayer(USHFLayerAnimInstance* Layer);
 	FORCEINLINE void UnregisterLayer(USHFLayerAnimInstance* OldLayer) { LinkedLayers.Remove(OldLayer); }
+	
+	void OnUpdateSimulatedProxiesMovement();
 	
 protected:
 	virtual FAnimInstanceProxy* CreateAnimInstanceProxy() override;
@@ -70,6 +74,8 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
 	bool bMovementToIdle = false;
 	
+	UPROPERTY(BlueprintReadOnly)
+	FSHFSharedAnimData SharedData;
 
 private:
 	void CalculateMovementDirection(float DeltaSeconds, FSHFSharedAnimData& OutData);

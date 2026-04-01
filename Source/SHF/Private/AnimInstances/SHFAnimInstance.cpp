@@ -5,7 +5,15 @@
 
 #include "KismetAnimationLibrary.h"
 #include "AnimInstances/SHFLayerAnimInstance.h"
+#include "Character/SHFCharacterBase.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "Kismet/KismetMathLibrary.h"
 #include "SHF/Components/AnimComponent.h"
+
+void FSHFAnimInstanceProxy::SetRootYawOffset(float NewYawOffset)
+{
+	SharedData.RootYawOffset = NewYawOffset;
+}
 
 void FSHFAnimInstanceProxy::Update(float DeltaSeconds)
 {
@@ -22,12 +30,11 @@ void USHFAnimInstance::NativeInitializeAnimation()
 		// 2. Direkt die AnimComponent suchen und speichern
 		AnimComp = OwningPawn->FindComponentByClass<UAnimComponent>();
         
-		if (!AnimComp)
+		if (AnimComp)
 		{
-			// Optional: Logge eine Warnung, falls die Komponente fehlt
-			UE_LOG(LogTemp, Warning, TEXT("SHFAnimInstance: Cannot find AnimComponent (%s)"), *OwningPawn->GetName());
-		}
-	}	
+			AnimComp->RegisterMainAnimInstance(this);
+		} else 	UE_LOG(LogTemp, Warning, TEXT("SHFAnimInstance: Cannot find AnimComponent (%s)"), *OwningPawn->GetName());
+	}
 }
 
 void USHFAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
@@ -40,12 +47,13 @@ void USHFAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 		if (!OwningPawn || !AnimComp) return;
 	}
 	
+	FSHFAnimInstanceProxy& Proxy = GetProxyOnGameThread<FSHFAnimInstanceProxy>();
+	
 	// 1. Paket schnüren
 	FSHFSharedAnimData NewData;
 	NewData.GroundSpeed = OwningPawn->GetVelocity().Size2D();
 	NewData.bIsMoving = NewData.GroundSpeed > 10.f;
 	NewData.TurnState = AnimComp->CurrentTurnState;
-	NewData.RootYawOffset = AnimComp->RootYawOffset;
 	NewData.Gait = ESHFGait::Run;
 	
 	NewData.LocomotionAngle = UKismetAnimationLibrary::CalculateDirection(OwningPawn->GetVelocity(), OwningPawn->GetActorRotation());
@@ -53,21 +61,58 @@ void USHFAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	NewData.StrideWarpingLocomotionSpeed = NewData.GroundSpeed;
 	NewData.StrideWarpingAlpha = FMath::Clamp(NewData.GroundSpeed / 50.f, 0.f, 1.f);
 	
+	NewData.LastFrameActorRotation = Proxy.SharedData.ActorRotation;
+	NewData.ActorRotation = OwningPawn->GetActorRotation();
+	float DeltaActorYaw;
+	
+	//NewData.RootYawOffset = UKismetMathLibrary::NormalizeAxis(Proxy.SharedData.RootYawOffset - DeltaActorYaw);
+	//if (OwningPawn->GetLocalRole() != ROLE_SimulatedProxy)
+		//NewData.RootYawOffset = Proxy.SharedData.RootYawOffset - UKismetMathLibrary::NormalizedDeltaRotator(NewData.ActorRotation, NewData.LastFrameActorRotation).Yaw;
+	if (ASHFCharacterBase* Char = Cast<ASHFCharacterBase>(OwningPawn))
+	{
+		NewData.ActorRotation = Char->GetCharacterMovement()->GetLastUpdateRotation();
+		DeltaActorYaw = UKismetMathLibrary::NormalizeAxis(Proxy.SharedData.ActorRotation.Yaw - NewData.ActorRotation.Yaw);
+		NewData.RootYawOffset = Proxy.SharedData.RootYawOffset + DeltaActorYaw;
+		//NewData.LastFrameActorRotation = Char->GetCharacterMovement()->GetLastUpdateRotation();
+	}
+		
+	//NewData.RootYawOffset = UKismetMathLibrary::NormalizeAxis(Proxy.SharedData.RootYawOffset - DeltaActorYaw);
+	
 	CalculateMovementDirection(DeltaSeconds, NewData);
 	
-	FSHFSharedAnimData SharedData = NewData;
-	//SharedData.TurnState = AnimComp->CurrentTurnState;
-	//SharedData.RootYawOffset = AnimComp->RootYawOffset;
+	if (AnimComp)
+	{
+		// Sicherstellen, dass wir im Stand sind
+		if (!SharedData.bIsMoving)
+		{
+			float CurveValue = GetCurveValue(TEXT("RemainingTurnYaw"));
 
-	FSHFAnimInstanceProxy& Proxy = GetProxyOnGameThread<FSHFAnimInstanceProxy>();
+			// 2. WENN EINE TURN-ANIMATION LÄUFT
+			if (SharedData.TurnState != ESHFTurnState::None)
+			{
+				// Die Kurve steuert jetzt den Offset (sie sinkt von 90 auf 0)
+				AnimComp->RootYawOffset = CurveValue;
+
+				// WENN DIE KURVE FERTIG IST (oder fast 0): Turn beenden
+				if (FMath::Abs(CurveValue) < 0.5f)
+				{
+					AnimComp->CurrentTurnState = ESHFTurnState::None;
+				}
+			}			
+		}
+	}	
+	
+	/* Daten in den Proxy schreiben */
+
 	Proxy.SharedData = NewData;
 	
 	// 2. Daten an alle Layer "pushen"
 	for (USHFLayerAnimInstance* Layer : LinkedLayers) {
 		if (IsValid(Layer)) {
-			Layer->UpdateFromMain(SharedData);
+			Layer->UpdateFromMain(NewData);
 		}
 	}	
+	
 }
 
 void USHFAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
@@ -75,6 +120,8 @@ void USHFAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
 	Super::NativeThreadSafeUpdateAnimation(DeltaSeconds);
 	
 	FSHFAnimInstanceProxy& Proxy = GetProxyOnAnyThread<FSHFAnimInstanceProxy>();
+	
+	SharedData = Proxy.SharedData;
 	
 	bIdleToMovement = Proxy.SharedData.bIsMoving;
 	bMovementToIdle = !Proxy.SharedData.bIsMoving;
@@ -88,6 +135,22 @@ void USHFAnimInstance::RegisterLayer(USHFLayerAnimInstance* Layer)
 	});
 
 	LinkedLayers.AddUnique(Layer);	
+}
+
+void USHFAnimInstance::OnUpdateSimulatedProxiesMovement()
+{
+	/*FSHFAnimInstanceProxy& Proxy = GetProxyOnGameThread<FSHFAnimInstanceProxy>();
+	
+	FSHFSharedAnimData LocalProxyData = Proxy.SharedData;
+	
+	FRotator ProxyRotation = LocalProxyData.ActorRotation;
+	FRotator LastFrameProxyRotation = LocalProxyData.LastFrameActorRotation;
+	FRotator DeltaActorYaw = ProxyRotation - LastFrameProxyRotation;
+	
+	
+	
+	Proxy.SetRootYawOffset(-UKismetMathLibrary::NormalizeAxis(LocalProxyData.RootYawOffset - DeltaActorYaw.Yaw));
+	GEngine->AddOnScreenDebugMessage(-1, 0.2f, FColor::Red, FString::Printf(TEXT("Root Yaw Offset: %f"), Proxy.SharedData.RootYawOffset));*/
 }
 
 FAnimInstanceProxy* USHFAnimInstance::CreateAnimInstanceProxy()

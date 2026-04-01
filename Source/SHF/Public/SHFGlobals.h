@@ -102,6 +102,13 @@ struct FSHFSharedAnimData {
 
 	UPROPERTY(BlueprintReadOnly)
 	float StrideWarpingLocomotionSpeed = 0.f; // Die tatsächliche Geschwindigkeit (cm/s)
+	
+	UPROPERTY(BlueprintReadOnly)
+	FRotator ActorRotation = FRotator::ZeroRotator;;
+	
+	UPROPERTY(BlueprintReadOnly)
+	FRotator LastFrameActorRotation = FRotator::ZeroRotator;
+
 };
 
 

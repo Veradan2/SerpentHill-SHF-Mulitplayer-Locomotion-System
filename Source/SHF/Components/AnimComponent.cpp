@@ -3,8 +3,8 @@
 
 #include "AnimComponent.h"
 
+#include "NetworkMessage.h"
 #include "AnimInstances/SHFAnimInstance.h"
-#include "AnimInstances/SHFLayerAnimInstance.h"
 #include "GameFramework/Character.h"
 #include "Net/UnrealNetwork.h"
 
@@ -108,7 +108,8 @@ void UAnimComponent::BeginPlay()
 		// Trigger OnRep on server (important!!!!!!)
 		OnRep_CurrentLayerTag();
 	}	
-
+	
+	RootYawOffset = 0.0f;
 }
 
 
@@ -129,6 +130,21 @@ void UAnimComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 				UE_LOG(LogTemp, Log, TEXT("SHF: Initialer Layer in Tick verlinkt."));
 			}
 		}
-	}	
+	}
+	
+}
+
+void UAnimComponent::OnUpdateSimulatedProxiesMovement()
+{
+	if (MainAnimInstance)
+		MainAnimInstance->OnUpdateSimulatedProxiesMovement();
+}
+
+void UAnimComponent::RegisterMainAnimInstance(USHFAnimInstance* NewAnimInstance)
+{
+	if (NewAnimInstance)
+		MainAnimInstance = NewAnimInstance;
+		
+	
 }
 

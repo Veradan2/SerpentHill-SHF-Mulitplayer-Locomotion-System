@@ -16,6 +16,14 @@ ASHFCharacterBase::ASHFCharacterBase()
 
 }
 
+void ASHFCharacterBase::OnRep_ReplicatedMovement()
+{
+	Super::OnRep_ReplicatedMovement();
+	
+	if (AnimComponent)
+		AnimComponent->OnUpdateSimulatedProxiesMovement();
+}
+
 void ASHFCharacterBase::BeginPlay()
 {
 	Super::BeginPlay();

@@ -8,6 +8,7 @@
 #include "AnimComponent.generated.h"
 
 
+class USHFAnimInstance;
 enum class ESHFTurnState : uint8;
 
 UENUM(BlueprintType)
@@ -32,6 +33,10 @@ public:
 	
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 	
+	void OnUpdateSimulatedProxiesMovement();
+	
+	void RegisterMainAnimInstance(USHFAnimInstance* NewAnimInstance);
+	
 	
 	UPROPERTY(EditDefaultsOnly, Category = "SHF|Setup")
 	ESHFAnimLayerTag InitialLayerTag;
@@ -39,8 +44,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SHF|Animation")
 	void SetAnimLayerTag(ESHFAnimLayerTag NewTag);
 	
+	UPROPERTY(VisibleDefaultsOnly, BlueprintReadOnly, Category = "SHF|Animation");
 	ESHFTurnState CurrentTurnState = ESHFTurnState::None;
 	
+	UPROPERTY(VisibleDefaultsOnly, BlueprintReadOnly, Category = "SHF|Animation");
 	float RootYawOffset = 0.f;
 
 
@@ -67,10 +74,9 @@ private:
 	
 	bool bInitialLayerLinked = false;
 	
+	FRotator LastActorRotation = FRotator::ZeroRotator;;	
 	
-	
-	
-
-
+	UPROPERTY()
+	TObjectPtr<USHFAnimInstance> MainAnimInstance;
 		
 };

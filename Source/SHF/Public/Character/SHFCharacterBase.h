@@ -16,6 +16,8 @@ class SHF_API ASHFCharacterBase : public ACharacter
 public:
 	ASHFCharacterBase();
 	virtual bool ShouldReplicateAcceleration() const override { return true; }
+	
+	virtual void OnRep_ReplicatedMovement() override;
 
 protected:
 	virtual void BeginPlay() override;
