@@ -12,8 +12,6 @@ ASHFCharacterBase::ASHFCharacterBase()
 	
 	AnimComponent = CreateDefaultSubobject<UAnimComponent>("Animation Component");
 	AnimComponent->SetIsReplicated(true);
-	
-
 }
 
 void ASHFCharacterBase::OnRep_ReplicatedMovement()
@@ -28,5 +26,15 @@ void ASHFCharacterBase::BeginPlay()
 {
 	Super::BeginPlay();
 	
+}
+
+void ASHFCharacterBase::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	
+	/*if (!IsLocallyControlled())
+	{
+		 bUseControllerRotationYaw = GetVelocity().Size2D() > 10.f;
+	}*/
 }
 

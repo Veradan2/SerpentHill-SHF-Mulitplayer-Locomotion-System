@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "SHFGlobals.h"
+#include "TurnInPlaceAnimInterface.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimInstanceProxy.h"
 #include "SHFAnimInstance.generated.h"
@@ -17,7 +18,7 @@ class UAnimComponent;
 USTRUCT(BlueprintType)
 struct FSHFAnimInstanceProxy : public FAnimInstanceProxy {
 	GENERATED_BODY()
-
+	
 	FSHFAnimInstanceProxy() : FAnimInstanceProxy() {}
 	FSHFAnimInstanceProxy(UAnimInstance* InAnimInstance) : FAnimInstanceProxy(InAnimInstance) {}
 
@@ -27,6 +28,7 @@ struct FSHFAnimInstanceProxy : public FAnimInstanceProxy {
 	
 	void SetRootYawOffset(float NewYawOffset);
 
+protected:
 	// Diese Funktion wird vom Anim-Thread aufgerufen
 	virtual void Update(float DeltaSeconds) override;
 };

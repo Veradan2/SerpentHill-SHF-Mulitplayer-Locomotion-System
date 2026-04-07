@@ -63,44 +63,14 @@ void USHFAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	
 	NewData.LastFrameActorRotation = Proxy.SharedData.ActorRotation;
 	NewData.ActorRotation = OwningPawn->GetActorRotation();
-	float DeltaActorYaw;
 	
-	//NewData.RootYawOffset = UKismetMathLibrary::NormalizeAxis(Proxy.SharedData.RootYawOffset - DeltaActorYaw);
-	//if (OwningPawn->GetLocalRole() != ROLE_SimulatedProxy)
-		//NewData.RootYawOffset = Proxy.SharedData.RootYawOffset - UKismetMathLibrary::NormalizedDeltaRotator(NewData.ActorRotation, NewData.LastFrameActorRotation).Yaw;
-	if (ASHFCharacterBase* Char = Cast<ASHFCharacterBase>(OwningPawn))
+	if (OwningPawn->GetLocalRole() != ROLE_SimulatedProxy && !NewData.bIsMoving)
 	{
-		NewData.ActorRotation = Char->GetCharacterMovement()->GetLastUpdateRotation();
-		DeltaActorYaw = UKismetMathLibrary::NormalizeAxis(Proxy.SharedData.ActorRotation.Yaw - NewData.ActorRotation.Yaw);
-		NewData.RootYawOffset = Proxy.SharedData.RootYawOffset + DeltaActorYaw;
-		//NewData.LastFrameActorRotation = Char->GetCharacterMovement()->GetLastUpdateRotation();
-	}
-		
-	//NewData.RootYawOffset = UKismetMathLibrary::NormalizeAxis(Proxy.SharedData.RootYawOffset - DeltaActorYaw);
+		const float DeltaActorYaw = UKismetMathLibrary::NormalizeAxis(Proxy.SharedData.ActorRotation.Yaw - NewData.ActorRotation.Yaw);
+		NewData.RootYawOffset = Proxy.SharedData.RootYawOffset + DeltaActorYaw;		
+	} else NewData.RootYawOffset = 0;
 	
 	CalculateMovementDirection(DeltaSeconds, NewData);
-	
-	if (AnimComp)
-	{
-		// Sicherstellen, dass wir im Stand sind
-		if (!SharedData.bIsMoving)
-		{
-			float CurveValue = GetCurveValue(TEXT("RemainingTurnYaw"));
-
-			// 2. WENN EINE TURN-ANIMATION LÄUFT
-			if (SharedData.TurnState != ESHFTurnState::None)
-			{
-				// Die Kurve steuert jetzt den Offset (sie sinkt von 90 auf 0)
-				AnimComp->RootYawOffset = CurveValue;
-
-				// WENN DIE KURVE FERTIG IST (oder fast 0): Turn beenden
-				if (FMath::Abs(CurveValue) < 0.5f)
-				{
-					AnimComp->CurrentTurnState = ESHFTurnState::None;
-				}
-			}			
-		}
-	}	
 	
 	/* Daten in den Proxy schreiben */
 
