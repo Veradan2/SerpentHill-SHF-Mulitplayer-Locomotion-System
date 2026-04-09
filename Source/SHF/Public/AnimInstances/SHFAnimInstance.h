@@ -7,9 +7,14 @@
 #include "TurnInPlaceAnimInterface.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimInstanceProxy.h"
+#include "Interfaces/AnimInstanceInterface.h"
 #include "SHFAnimInstance.generated.h"
 
 
+struct FAnimNodeReference;
+struct FAnimUpdateContext;
+class UTurnInPlace;
+class UCharacterMovementComponent;
 class USHFLayerAnimInstance;
 class UAnimComponent;
 /**
@@ -39,7 +44,7 @@ protected:
  * 
  */
 UCLASS()
-class SHF_API USHFAnimInstance : public UAnimInstance
+class SHF_API USHFAnimInstance : public UAnimInstance, public ITurnInPlaceAnimInterface, public IAnimInstanceInterface
 {
 	GENERATED_BODY()
 	
@@ -53,6 +58,12 @@ public:
 	
 	void OnUpdateSimulatedProxiesMovement();
 	
+	virtual FTurnInPlaceCurveValues GetTurnInPlaceCurveValues_Implementation() const override;
+	virtual FTurnInPlaceAnimSet GetTurnInPlaceAnimSet_Implementation() const override;
+	
+	virtual void ReceiveNewEquipMode(ESHFEquipMode NewEquipMode) override;
+	virtual void ReceiveNewGait(ESHFGait NewMovementGait) override;
+	
 protected:
 	virtual FAnimInstanceProxy* CreateAnimInstanceProxy() override;
 	
@@ -61,7 +72,16 @@ protected:
 	TObjectPtr<APawn> OwningPawn;
 
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "SHF|Core")
-	TObjectPtr<UAnimComponent> AnimComp;	
+	TObjectPtr<UAnimComponent> AnimComp;
+	
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "SHF|Core")
+	TObjectPtr<ACharacter> CharacterRef;
+	
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "SHF|Core")
+	TObjectPtr<UCharacterMovementComponent> MovementCompRef;
+	
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "SHF|Core")
+	TObjectPtr<UTurnInPlace> TurnInPlaceComp;
 	
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<USHFLayerAnimInstance>> LinkedLayers;
@@ -76,10 +96,64 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
 	bool bMovementToIdle = false;
 	
+	UPROPERTY(BlueprintReadOnly, Transient, Category = "SHF|Core")
+	FTransitionRuleContainer TransitionRules;
+	
 	UPROPERTY(BlueprintReadOnly)
 	FSHFSharedAnimData SharedData;
+	
+	UFUNCTION(BlueprintCallable, meta = (BlueprintThreadSafe), Category = "SHF|Core")
+	void SetupIdle(const FAnimUpdateContext& Context, const FAnimNodeReference& Node);
+	
+	UFUNCTION(BlueprintCallable, meta = (BlueprintThreadSafe), Category = "SHF|Core")
+	void SetupTurnInPlace(const FAnimUpdateContext& Context, const FAnimNodeReference& Node);
+	
+	UFUNCTION(BlueprintCallable, meta = (BlueprintThreadSafe), Category = "SHF|Core")
+	void UpdateTurnInPlace(const FAnimUpdateContext& Context, const FAnimNodeReference& Node);
+	
+	UFUNCTION(BlueprintCallable, meta = (BlueprintThreadSafe), Category = "SHF|Core")
+	void SetupTurnAnim(const FAnimUpdateContext& Context, const FAnimNodeReference& Node);
+	
+	UFUNCTION(BlueprintCallable, meta = (BlueprintThreadSafe), Category = "SHF|Core")
+	void UpdateTurnInPlaceRecovery(const FAnimUpdateContext& Context, const FAnimNodeReference& Node);
+	
+	UFUNCTION(BlueprintCallable, meta = (BlueprintThreadSafe), Category = "SHF|Core")
+	void SetupTurnRecovery(const FAnimUpdateContext& Context, const FAnimNodeReference& Node);
+	
 
 private:
 	void CalculateMovementDirection(float DeltaSeconds, FSHFSharedAnimData& OutData);
 	
+	bool GetReferences();
+	
+protected:
+	UPROPERTY(BlueprintReadOnly);
+	FTurnInPlaceAnimGraphData TurnData = FTurnInPlaceAnimGraphData();
+	
+	UPROPERTY(BlueprintReadOnly)
+	FTurnInPlaceAnimGraphOutput TurnOutput = FTurnInPlaceAnimGraphOutput();
+	
+	UPROPERTY(BlueprintReadOnly)
+	bool bCanUpdateTurnInPlace = false;
+	
+	UPROPERTY(BlueprintReadOnly)
+	FTurnInPlaceCurveValues TurnInPlaceCurveValues;
+	
+	UPROPERTY(BlueprintReadOnly)
+	FTurnInPlaceGraphNodeData TurnInPlaceGraphNodeData;
+	
+	UFUNCTION(BlueprintPure, meta = (BlueprintThreadSafe))
+	FTurnInPlaceAnimSet GetTurnAnimSet() const;
+	
+	UFUNCTION(BlueprintPure, meta = (BlueprintThreadSafe))
+	UAnimSequence* GetTurnAnimation(bool bRecovery);
+	
+	UPROPERTY(EditDefaultsOnly, Category = "SHF|TIP");
+	FTurnInPlaceAnimSet TIPAnimSet;
+	
+	UPROPERTY(EditDefaultsOnly, Category = "SHF|TIP");
+	FTurnInPlaceAnimSet TIPAnimSetCrouched;
+	
+	ESHFGait CurrentMovementGait = ESHFGait::Run;
+	ESHFEquipMode CurrentEquipMode = ESHFEquipMode::Mode1;
 };

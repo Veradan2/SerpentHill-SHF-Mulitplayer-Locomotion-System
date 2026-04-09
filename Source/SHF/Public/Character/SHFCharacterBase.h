@@ -19,6 +19,9 @@ public:
 	
 	virtual void Tick( float DeltaSeconds ) override;
 	
+	UFUNCTION(BlueprintNativeEvent, Category = "SHF|Setup")
+	void LinkAnimLayer(TSubclassOf<UAnimInstance> NewLayerClass);
+	
 	
 	virtual void OnRep_ReplicatedMovement() override;
 

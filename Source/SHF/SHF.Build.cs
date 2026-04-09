@@ -8,11 +8,15 @@ public class SHF : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 	
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "ActorTurnInPlace", "ActorTurnInPlace" });
+		PublicDependencyModuleNames.AddRange(new string[]
+		{
+			"Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "ActorTurnInPlace", "ActorTurnInPlace",
+			"AnimGraphRuntime", "AnimationBlueprintLibrary", "AnimationLocomotionLibraryEditor", "AnimationLocomotionLibraryRuntime"
+		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { "AnimGraphRuntime" });
 
-		// Uncomment if you are using Slate UI
+		// Uncomment if you are using Slate UIS
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });
 		
 		// Uncomment if you are using online features

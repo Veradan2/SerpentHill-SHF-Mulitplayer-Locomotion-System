@@ -6,10 +6,14 @@
 
 #include "CoreMinimal.h"
 #include "SHFGlobals.h"
+#include "TurnInPlaceAnimInterface.h"
+#include "TurnInPlaceTypes.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimInstanceProxy.h"
+#include "Kismet2/BlueprintEditorUtils.h"
 #include "SHFLayerAnimInstance.generated.h"
 
+class UAnimSetAsset;
 struct FAnimNodeReference;
 struct FAnimUpdateContext;
 struct FSHFSharedAnimData;
@@ -41,7 +45,7 @@ struct FSHFLayerAnimInstanceProxy : public FAnimInstanceProxy
  * The parent layer anim instance with the visual logic
  */
 UCLASS()
-class SHF_API USHFLayerAnimInstance : public UAnimInstance
+class SHF_API USHFLayerAnimInstance : public UAnimInstance, public ITurnInPlaceAnimInterface
 {
 	GENERATED_BODY()
 	
@@ -50,14 +54,17 @@ public:
 	virtual void NativeUpdateAnimation(float DeltaSeconds) override;
 	virtual void NativeThreadSafeUpdateAnimation(float DeltaSeconds) override;
 	
+	virtual FTurnInPlaceAnimSet GetTurnInPlaceAnimSet_Implementation() const override;
+	
 	void UpdateFromMain(const FSHFSharedAnimData& NewData);
 	
 protected:
 	virtual FAnimInstanceProxy* CreateAnimInstanceProxy() override;
 	
 		
-		
-	
+	/*
+	 *			Idle Sequence Player
+	 */
 	UFUNCTION(BlueprintCallable, Category = "SHF|AnimNodeFunctions", meta = (BlueprintThreadSafe))
 	void Idle_OnInitialUpdate(const FAnimUpdateContext& Context, const FAnimNodeReference& Node);
 	
@@ -67,8 +74,23 @@ protected:
 	UFUNCTION(BlueprintCallable, Category = "SHF|AnimNodeFunctions", meta = (BlueprintThreadSafe))
 	void Idle_OnUpdate(const FAnimUpdateContext& Context, const FAnimNodeReference& Node);
 	
+	/*
+	 *			Movement(Cycle) Sequence Player
+	 */
 	UFUNCTION(BlueprintCallable, Category = "SHF|AnimNodeFunctions", meta = (BlueprintThreadSafe))
 	void Movement_OnUpdate(const FAnimUpdateContext& Context, const FAnimNodeReference& Node);
+	
+	/*
+	 *			Start Sequence Evaluator
+	 */
+	UFUNCTION(BlueprintCallable, Category = "SHF|AnimNodeFunctions", meta = (BlueprintThreadSafe))
+	void Start_OnInitialUpdate(const FAnimUpdateContext& Context, const FAnimNodeReference& Node);
+	
+	UFUNCTION(BlueprintCallable, Category = "SHF|AnimNodeFunctions", meta = (BlueprintThreadSafe))
+	void Start_OnBecomeRelevant(const FAnimUpdateContext& Context, const FAnimNodeReference& Node);
+	
+	UFUNCTION(BlueprintCallable, Category = "SHF|AnimNodeFunctions", meta = (BlueprintThreadSafe))
+	void Start_OnUpdate(const FAnimUpdateContext& Context, const FAnimNodeReference& Node);
 	
 	
 		// Local copy of the data exchange struct (thread safe access possible)
@@ -80,29 +102,37 @@ protected:
 	void OnDataUpdated();
 	
 	/*
-	 * Idle and Breaks
+	 * All anims which the current layer contains
 	 */
-
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SHF|Idle")
-	TObjectPtr<UAnimSequence> IdleAnim;
 	
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SHF|Idle")
-	TArray<TObjectPtr<UAnimSequence>> IdleBreaks;
-	
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SHF|TIP")
-	TObjectPtr<UAnimSequence> TurnLeft90Anim;
-	
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SHF|TIP")
-	TObjectPtr<UAnimSequence> TurnRight90Anim;
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SHF|AnimSet")
+	TObjectPtr<UAnimSetAsset> MovementAnimSet;
 	
 	
+	/*
+	 * Cached Anims (thread-safe!)
+	 */
+	UPROPERTY(BlueprintReadOnly, Category = "SHF|Idle")
+	TObjectPtr<UAnimSequence> IdleAnim_Cached;
+	
+	UPROPERTY(BlueprintReadOnly, Category = "SHF|Idle")
+	TArray<TObjectPtr<UAnimSequence>> IdleBreaks_Cached;
+	
+	UPROPERTY(BlueprintReadOnly, Category = "SHF|TIP")
+	FTurnInPlaceAnimSet TurnInPlaceAnimSet_Cached;
+	
+	UPROPERTY(BlueprintReadOnly, Category = "SHF|TIP")
+	FTurnInPlaceAnimSet TurnInPlaceAnimSetCrouched_Cached;
+	
+	UPROPERTY(BlueprintReadOnly, Category = "SHF|Locomotion")
+	TMap<ESHFGait, FCardinalAnimationSet> MovementAnims_Cached;
+	
+	UPROPERTY(BlueprintReadOnly, Category = "SHF|Start")
+	TMap<ESHFGait, FCardinalAnimationSet> StartAnims_Cached;
 	
 	UPROPERTY(BlueprintReadWrite)
 	int32 IdleIndex = 0;
 	
-	// Eine Map, die pro Gangart (Walk, Run) ein Set von 4 Animationen speichert
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SHF|Locomotion")
-	TMap<ESHFGait, FCardinalAnimationSet> MovementAnims;
 	
 private:
 	double IdleActiveTimeStamp = 0.;
@@ -111,5 +141,14 @@ private:
 	
 	UPROPERTY()
 	TObjectPtr<AGameStateBase> CachedGameState = nullptr;
+	
+	void SetAnimSet(ESHFEquipMode EquipMode, bool bEnforce);
+	
+	ESHFEquipMode CurrentEquipMode;
+	bool bFirstInit = true;
+	
+	float DistanceTraveled;
+	FVector StartLocation;
+	
 	
 };

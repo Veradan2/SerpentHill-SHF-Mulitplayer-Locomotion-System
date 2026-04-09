@@ -12,6 +12,7 @@ public class ActorTurnInPlaceEditor : ModuleRules
                 "Core",
                 "AnimationModifiers",
                 "AnimationBlueprintLibrary",
+                "AnimGraphRuntime"
             }
         );
 

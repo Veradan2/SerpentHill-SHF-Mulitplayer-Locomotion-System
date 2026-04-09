@@ -38,3 +38,6 @@ void ASHFCharacterBase::Tick(float DeltaSeconds)
 	}*/
 }
 
+void ASHFCharacterBase::LinkAnimLayer_Implementation(TSubclassOf<UAnimInstance> NewLayerClass)
+{
+}

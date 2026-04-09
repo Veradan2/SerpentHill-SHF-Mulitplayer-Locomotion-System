@@ -3,9 +3,14 @@
 
 #include "AnimInstances/SHFLayerAnimInstance.h"
 
+
+#include "SequenceEvaluatorLibrary.h"
 #include "SequencePlayerLibrary.h"
+//#include "DistanceMatching/AnimDistanceMatchingLibrary.h"
+#include "AnimDistanceMatchingLibrary.h"
 #include "Animation/AnimNodeReference.h"
 #include "AnimInstances/SHFAnimInstance.h"
+#include "Data/AnimSetAsset.h"
 #include "Engine/PackageMapClient.h"
 #include "GameFramework/GameStateBase.h"
 
@@ -44,6 +49,12 @@ void USHFLayerAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
 	SharedData = Proxy.SharedDataProxy;	
 }
 
+FTurnInPlaceAnimSet USHFLayerAnimInstance::GetTurnInPlaceAnimSet_Implementation() const
+{
+	return SharedData.CMCStates.bIsCrouching ? TurnInPlaceAnimSetCrouched_Cached : TurnInPlaceAnimSet_Cached;
+}
+
+
 void USHFLayerAnimInstance::UpdateFromMain(const FSHFSharedAnimData& NewData)
 {
 	FSHFLayerAnimInstanceProxy& Proxy = GetProxyOnGameThread<FSHFLayerAnimInstanceProxy>();
@@ -53,6 +64,11 @@ void USHFLayerAnimInstance::UpdateFromMain(const FSHFSharedAnimData& NewData)
 		IdleActiveTimeStamp = GetWorld()->GetTimeSeconds(); //Reset
 	
 	OnDataUpdated();
+	
+	SetAnimSet(NewData.EquipMode, false);
+	CurrentEquipMode = NewData.EquipMode;
+	
+	SetAnimSet(CurrentEquipMode, false);	//According to the docs, this is the recommed way...
 }
 
 FAnimInstanceProxy* USHFLayerAnimInstance::CreateAnimInstanceProxy()
@@ -67,10 +83,10 @@ void USHFLayerAnimInstance::Idle_OnInitialUpdate(const FAnimUpdateContext& Conte
 	const FSequencePlayerReference SequencePlayer = USequencePlayerLibrary::ConvertToSequencePlayer(Node, Result);
 	if (Result == EAnimNodeReferenceConversionResult::Succeeded)
 	{
-		USequencePlayerLibrary::SetSequence(SequencePlayer, IdleAnim);
+		USequencePlayerLibrary::SetSequence(SequencePlayer, IdleAnim_Cached);
 		USequencePlayerLibrary::SetAccumulatedTime(SequencePlayer, 0.0f);
 		// Nutze KEIN Blending beim allerersten Frame (Dauer 0.0f)
-		USequencePlayerLibrary::SetSequenceWithInertialBlending(Context, SequencePlayer, IdleAnim, 0.0f);		
+		USequencePlayerLibrary::SetSequenceWithInertialBlending(Context, SequencePlayer, IdleAnim_Cached, 0.f);		
 	}
 }
 
@@ -81,27 +97,40 @@ void USHFLayerAnimInstance::Idle_OnBecomeRelevant(const FAnimUpdateContext& Cont
 	const FSequencePlayerReference SequencePlayer = USequencePlayerLibrary::ConvertToSequencePlayer(Node, Result);
 	if (Result == EAnimNodeReferenceConversionResult::Succeeded)
 	{
-		USequencePlayerLibrary::SetSequenceWithInertialBlending(Context, SequencePlayer, IdleAnim, .2f);
+		USequencePlayerLibrary::SetSequenceWithInertialBlending(Context, SequencePlayer, IdleAnim_Cached, .2f);
 		IdleActiveTimeStamp = GetWorld()->GetTimeSeconds();
 	}
-	
 }
 
 void USHFLayerAnimInstance::Idle_OnUpdate(const FAnimUpdateContext& Context, const FAnimNodeReference& Node)
 {
-	if (FMath::TruncToInt64(GetWorld()->GetTimeSeconds() - IdleActiveTimeStamp) > 5)
+	EAnimNodeReferenceConversionResult Result;
+	const FSequencePlayerReference SequencePlayer = USequencePlayerLibrary::ConvertToSequencePlayer(Node, Result);
+	
+	if (Result != EAnimNodeReferenceConversionResult::Succeeded) return;
+	
+	UAnimSequenceBase* CurrentPlaying = USequencePlayerLibrary::GetSequencePure(SequencePlayer);
+	const float CurrentTime = GetWorld()->GetTimeSeconds();
+	bool bIsPlayingAnyBreak = IdleBreaks_Cached.Contains(CurrentPlaying);
+	
+	if (CurrentPlaying != IdleAnim_Cached && !bIsPlayingAnyBreak)
 	{
-		EAnimNodeReferenceConversionResult Result;
-		const FSequencePlayerReference SequencePlayer = USequencePlayerLibrary::ConvertToSequencePlayer(Node, Result);
-		if (Result == EAnimNodeReferenceConversionResult::Succeeded)
-		{
-			UAnimSequence* AnimSeq = IdleBreaks[IdleIndex];
-			if (AnimSeq != USequencePlayerLibrary::GetSequencePure(SequencePlayer))
-				USequencePlayerLibrary::SetSequenceWithInertialBlending(Context, SequencePlayer, AnimSeq, .2f);
-			IdleActiveTimeStamp = GetWorld()->GetTimeSeconds();
-		}
+		USequencePlayerLibrary::SetSequenceWithInertialBlending(Context, SequencePlayer, IdleAnim_Cached, 0.2f);
+		IdleActiveTimeStamp = CurrentTime;
+		return;
 	}
 	
+	if (CurrentTime - IdleActiveTimeStamp > 5.f)
+	{
+		if (IdleBreaks_Cached.IsValidIndex(IdleIndex))
+		{
+			UAnimSequence* NextBreak = IdleBreaks_Cached[IdleIndex];
+			USequencePlayerLibrary::SetSequenceWithInertialBlending(Context, SequencePlayer, NextBreak, .2f);
+			
+			IdleIndex = (IdleIndex + 1) % IdleBreaks_Cached.Num();
+			IdleActiveTimeStamp = CurrentTime;
+		}
+	}
 }
 
 void USHFLayerAnimInstance::Movement_OnUpdate(const FAnimUpdateContext& Context, const FAnimNodeReference& Node)
@@ -113,7 +142,7 @@ void USHFLayerAnimInstance::Movement_OnUpdate(const FAnimUpdateContext& Context,
 	{
 		// 1. Ziel-Animation basierend auf der Richtung bestimmen
 		UAnimSequence* TargetAnim = nullptr;
-		if (FCardinalAnimationSet* Set = MovementAnims.Find(SharedData.Gait))
+		if (FCardinalAnimationSet* Set = MovementAnims_Cached.Find(SharedData.Gait))
 		{
 			TargetAnim = Set->SelectAnim(SharedData.MovementDirection);
 		}
@@ -144,11 +173,64 @@ void USHFLayerAnimInstance::Movement_OnUpdate(const FAnimUpdateContext& Context,
 	}	
 }
 
+void USHFLayerAnimInstance::Start_OnInitialUpdate(const FAnimUpdateContext& Context, const FAnimNodeReference& Node)
+{
+	EAnimNodeReferenceConversionResult Result;
+	const FSequenceEvaluatorReference SequenceEvaluator = USequenceEvaluatorLibrary::ConvertToSequenceEvaluator(Node, Result);
+	if (Result == EAnimNodeReferenceConversionResult::Succeeded)
+	{
+		if (FCardinalAnimationSet* Set = MovementAnims_Cached.Find(SharedData.Gait))
+		{
+			UAnimSequenceBase* AnimSeq = Set->SelectAnim(SharedData.MovementDirection);
+			USequenceEvaluatorLibrary::SetSequenceWithInertialBlending(Context, SequenceEvaluator, AnimSeq, 0.2f);
+		}
+		
+	}
+}
+
+void USHFLayerAnimInstance::Start_OnBecomeRelevant(const FAnimUpdateContext& Context, const FAnimNodeReference& Node)
+{
+	//Get Start location
+	const FSHFAnimInstanceProxy& Proxy = GetProxyOnAnyThread<FSHFAnimInstanceProxy>();
+	
+	StartLocation = Proxy.GetComponentTransform().GetLocation();
+	DistanceTraveled = 0.f;
+	
+	//Set Start time to 0
+	EAnimNodeReferenceConversionResult Result;
+	const FSequenceEvaluatorReference SequenceEvaluator = USequenceEvaluatorLibrary::ConvertToSequenceEvaluator(Node, Result);
+	if (Result == EAnimNodeReferenceConversionResult::Succeeded)
+	{
+		USequenceEvaluatorLibrary::SetExplicitTime(SequenceEvaluator, 0.f);
+	}
+}
+
+void USHFLayerAnimInstance::Start_OnUpdate(const FAnimUpdateContext& Context, const FAnimNodeReference& Node)
+{
+	const FSHFAnimInstanceProxy& Proxy = GetProxyOnAnyThread<FSHFAnimInstanceProxy>();
+	
+	FVector CurrentLocation = Proxy.GetComponentTransform().GetLocation();
+	
+	EAnimNodeReferenceConversionResult Result;
+	const FSequenceEvaluatorReference SequenceEvaluator = USequenceEvaluatorLibrary::ConvertToSequenceEvaluator(Node, Result);
+	if (Result == EAnimNodeReferenceConversionResult::Succeeded)
+	{
+		DistanceTraveled = FVector::Distance(CurrentLocation, StartLocation);
+		UAnimDistanceMatchingLibrary::AdvanceTimeByDistanceMatching(
+			Context, 
+			SequenceEvaluator, 
+			DistanceTraveled, 
+			FName("Distance") 
+		);
+	}
+	
+}
+
 void USHFLayerAnimInstance::CalculateIdleIndex()
 {
 	const UWorld* World = GetWorld();
 	
-	if (IdleBreaks.Num() > 0)
+	if (IdleBreaks_Cached.Num() > 0)
 	{
 		AActor* Owner = GetOwningActor();
 		if (Owner && IsValid(World))
@@ -163,7 +245,7 @@ void USHFLayerAnimInstance::CalculateIdleIndex()
 					ServerTime = CachedGameState->GetServerWorldTimeSeconds();
 				}
 				
-				int32 UniqueSeed = 0;
+				int32 UniqueSeed;
 				if (World->GetNetDriver() && World->GetNetDriver()->GuidCache.IsValid())
 				{
 					UniqueSeed = World->GetNetDriver()->GuidCache->GetOrAssignNetGUID(Owner).ObjectId;
@@ -174,6 +256,7 @@ void USHFLayerAnimInstance::CalculateIdleIndex()
 					UniqueSeed = Owner->GetUniqueID();
 				}				
 				// 3. Zeitfenster definieren (z.B. alle 10 Sekunden ein möglicher Wechsel)
+				
 				int32 TimeSlot = FMath::FloorToInt(ServerTime / IDLE_BREAK_UPDATE_PERIOD);
 		
     
@@ -181,8 +264,25 @@ void USHFLayerAnimInstance::CalculateIdleIndex()
 				// Dadurch würfelt jeder Charakter alle 10s neu, aber für sich individuell
 				FRandomStream DeterministicStream(UniqueSeed + TimeSlot);
     
-				IdleIndex = DeterministicStream.RandRange(0, IdleBreaks.Num() - 1);
+				IdleIndex = DeterministicStream.RandRange(0, IdleBreaks_Cached.Num() - 1);
 				}
 		}
 	}	
+}
+
+void USHFLayerAnimInstance::SetAnimSet(ESHFEquipMode EquipMode, bool bEnforce)
+{
+	if (CurrentEquipMode != EquipMode || bFirstInit || bEnforce)
+	{
+		if (FMovementAnimSet* MovementAnims = MovementAnimSet->AnimSet.Find(EquipMode))
+		{
+			IdleAnim_Cached = MovementAnims->IdleAnim;
+			IdleBreaks_Cached = MovementAnims->IdleBreakAnims;
+			MovementAnims_Cached = MovementAnims->CycleAnims;
+			StartAnims_Cached = MovementAnims->StartAnims;
+			TurnInPlaceAnimSet_Cached = MovementAnims->TurnInPlaceAnimSet;
+			TurnInPlaceAnimSetCrouched_Cached = MovementAnims->TurnInPlaceAnimSetCrouched;
+		}
+		bFirstInit = false;
+	}
 }

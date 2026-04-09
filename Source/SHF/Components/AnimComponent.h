@@ -11,17 +11,6 @@
 class USHFAnimInstance;
 enum class ESHFTurnState : uint8;
 
-UENUM(BlueprintType)
-enum class ESHFAnimLayerTag : uint8
-{
-	Unarmed,
-	Pistol,
-	Rifle,
-	None
-};
-
-
-
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
 class SHF_API UAnimComponent : public UActorComponent
 {
@@ -29,8 +18,9 @@ class SHF_API UAnimComponent : public UActorComponent
 
 public:	
 	UAnimComponent();
-	virtual void GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const override;
 	
+	virtual void BeginPlay() override;
+	virtual void GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const override;
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 	
 	void OnUpdateSimulatedProxiesMovement();
@@ -41,30 +31,57 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "SHF|Setup")
 	ESHFAnimLayerTag InitialLayerTag;
 	
+	UPROPERTY(EditDefaultsOnly, Category = "SHF|Setup")
+	ESHFEquipMode InitialEquipMode;
+	
+	UPROPERTY(EditDefaultsOnly, Category = "SHF|Setup")
+	ESHFGait InitialMovementGait;
+	
 	UFUNCTION(BlueprintCallable, Category = "SHF|Animation")
 	void SetAnimLayerTag(ESHFAnimLayerTag NewTag);
 	
-	UPROPERTY(VisibleDefaultsOnly, BlueprintReadOnly, Category = "SHF|Animation");
-	ESHFTurnState CurrentTurnState = ESHFTurnState::None;
+	UFUNCTION(BlueprintCallable, Category = "SHF|Animation")
+	void SetEquipMode(ESHFEquipMode NewEquipMode);
+	
+	UFUNCTION(BlueprintCallable, Category = "SHF|Animation")
+	void SetMovementGait(ESHFGait NewMovementGait);
 	
 	UPROPERTY(VisibleDefaultsOnly, BlueprintReadOnly, Category = "SHF|Animation");
 	float RootYawOffset = 0.f;
 
 
 protected:
-	virtual void BeginPlay() override;
-		
+
 	UPROPERTY(EditAnywhere, Category = "SHF|Config")
 	TMap<ESHFAnimLayerTag,TSubclassOf<UAnimInstance>> LayerConfig;
 	
 	UPROPERTY(ReplicatedUsing = OnRep_CurrentLayerTag)
 	ESHFAnimLayerTag CurrentLayerTag = ESHFAnimLayerTag::None;
 	
+	UPROPERTY(ReplicatedUsing = OnRep_CurrentEquipMode)
+	ESHFEquipMode CurrentEquipMode = ESHFEquipMode::Mode1;
+	
+	UPROPERTY(ReplicatedUsing=OnRep_CurrentMovementGait)
+	ESHFGait CurrentMovementGait = ESHFGait::Run;
+	
 	UFUNCTION(Server, Reliable, WithValidation)
 	void Server_SetAnimLayerTag(ESHFAnimLayerTag NewTag);
 	
+	UFUNCTION(Server, Reliable, WithValidation)
+	void Server_SetEquipMode(ESHFEquipMode NewEquipMode);
+	
+	UFUNCTION(Server, Reliable, WithValidation)
+	void Server_SetMovementGait(ESHFGait NewMovementGait);
+	
 	UFUNCTION()
 	void OnRep_CurrentLayerTag();
+	
+	UFUNCTION()
+	void OnRep_CurrentEquipMode();
+	
+	UFUNCTION()
+	void OnRep_CurrentMovementGait();
+
 	
 	void ApplyLayer(TSubclassOf<UAnimInstance> LayerClass);
 	
@@ -73,10 +90,14 @@ private:
 	TObjectPtr<ACharacter> OwningCharacter;
 	
 	bool bInitialLayerLinked = false;
-	
-	FRotator LastActorRotation = FRotator::ZeroRotator;;	
+	bool bFirstLayerLink = true;
 	
 	UPROPERTY()
 	TObjectPtr<USHFAnimInstance> MainAnimInstance;
-		
+	
+public:
+	FORCEINLINE ESHFEquipMode GetCurrentEquipMode() const { return CurrentEquipMode; }
+	FORCEINLINE ESHFGait GetCurrentMovementGait() const { return CurrentMovementGait; }
+	
+	
 };
