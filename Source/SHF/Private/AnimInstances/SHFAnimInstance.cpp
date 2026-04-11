@@ -16,6 +16,7 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/KismetMathLibrary.h"
+#include "Libraries/AnimFunctionLibrary.h"
 #include "SHF/Components/AnimComponent.h"
 
 void FSHFAnimInstanceProxy::SetRootYawOffset(float NewYawOffset)
@@ -49,6 +50,9 @@ void USHFAnimInstance::NativeInitializeAnimation()
 		TurnInPlaceComp = OwningPawn->FindComponentByClass<UTurnInPlace>();
 		checkf(IsValid(TurnInPlaceComp), TEXT("SHFAnimInstance: Cannot find TurnInPlaceComponent (%s)"), *OwningPawn->GetName() );
 	}
+	
+	PreviousMovementGait = CurrentMovementGait;
+	PreviousEquipMode = CurrentEquipMode;
 }
 
 void USHFAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
@@ -65,6 +69,7 @@ void USHFAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	if (!GetReferences()) return;
 	
 	FSHFAnimInstanceProxy& Proxy = GetProxyOnGameThread<FSHFAnimInstanceProxy>();
+
 	
 	// 1. Paket schnüren
 	FSHFSharedAnimData NewData;
@@ -100,6 +105,9 @@ void USHFAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	NewData.MovementConfig.bUseSeparateBrakingFriction = MovementCompRef->bUseSeparateBrakingFriction;
 	
 	
+	NewData.MovementState.bGateChanged = CurrentMovementGait != PreviousMovementGait;
+	NewData.MovementState.bEquipModeChanged = CurrentEquipMode != PreviousEquipMode;
+	
 	
 	const float DeltaActorYaw = UKismetMathLibrary::NormalizeAxis(Proxy.SharedData.ActorRotation.Yaw - NewData.ActorRotation.Yaw);
 	NewData.RootYawOffset = Proxy.SharedData.RootYawOffset + DeltaActorYaw;		
@@ -118,6 +126,9 @@ void USHFAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	}
 	UTurnInPlaceStatics::UpdateTurnInPlace(TurnInPlaceComp, DeltaSeconds, TurnData, NewData.CMCStates.bIsStrafing,
 	                                       TurnOutput, bCanUpdateTurnInPlace);
+	
+	PreviousMovementGait = CurrentMovementGait;
+	PreviousEquipMode = CurrentEquipMode;
 }
 
 
@@ -126,6 +137,15 @@ void USHFAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
 	Super::NativeThreadSafeUpdateAnimation(DeltaSeconds);
 	
 	FSHFAnimInstanceProxy& Proxy = GetProxyOnAnyThread<FSHFAnimInstanceProxy>();
+	
+	for (const USHFLayerAnimInstance* Layer : LinkedLayers)
+	{
+		if (IsValid(Layer) && Layer->bStartFinished)
+		{
+			Proxy.SharedData.bStartFinished = true;
+			break;
+		}
+	}
 	
 	SharedData = Proxy.SharedData;
 	
@@ -136,6 +156,7 @@ void USHFAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
 	TransitionRules.bCycle2Idle = !Proxy.SharedData.bIsMoving;
 	TransitionRules.bIdle2Start = Proxy.SharedData.bIsAccelerating;
 	TransitionRules.bStart2Cycle = FMath::IsNearlyEqual(Proxy.SharedData.GroundSpeed, Proxy.SharedData.MovementConfig.MaxWalkSpeed, 5.f);
+	TransitionRules.bStart2CycleCond2 = Proxy.SharedData.MovementState.bGateChanged || Proxy.SharedData.MovementState.bEquipModeChanged;
 	
 	bIdleToMovement = Proxy.SharedData.bIsMoving;
 	bMovementToIdle = !Proxy.SharedData.bIsMoving;
@@ -151,10 +172,6 @@ void USHFAnimInstance::RegisterLayer(USHFLayerAnimInstance* Layer)
 	LinkedLayers.AddUnique(Layer);	
 }
 
-void USHFAnimInstance::OnUpdateSimulatedProxiesMovement()
-{
-	//Dummy function: Not required anymore
-}
 
 FTurnInPlaceCurveValues USHFAnimInstance::GetTurnInPlaceCurveValues_Implementation() const
 {
@@ -256,43 +273,16 @@ void USHFAnimInstance::SetupTurnRecovery(const FAnimUpdateContext& Context, cons
 
 void USHFAnimInstance::CalculateMovementDirection(float DeltaSeconds, FSHFSharedAnimData& OutData)
 {
-	FVector Velocity = OwningPawn->GetVelocity();
-	FRotator Rotation = OwningPawn->GetActorRotation();
-
-	// 1. Roh-Winkel berechnen (-180 bis 180)
-	float RawAngle = UKismetAnimationLibrary::CalculateDirection(Velocity, Rotation);
-	OutData.LocomotionAngle = RawAngle;
-
-	// 2. Richtungs-Logik mit Hysterese (Buffer)
-	// Wir definieren Schwellenwerte, die sich je nach letzter Richtung verschieben
-	float Buffer = 10.0f; 
-	ESHFMovementDirection NewDir = LastMovementDirection;
-
-	// Vorwärts Check (Standardbereich -45 bis 45)
-	if (LastMovementDirection == ESHFMovementDirection::Forward) {
-		if (RawAngle > (45.f + Buffer)) NewDir = ESHFMovementDirection::Right;
-		else if (RawAngle < (-45.f - Buffer)) NewDir = ESHFMovementDirection::Left;
-	}
-	// Rechts Check
-	else if (LastMovementDirection == ESHFMovementDirection::Right) {
-		if (RawAngle < (45.f - Buffer)) NewDir = ESHFMovementDirection::Forward;
-		else if (RawAngle > (135.f + Buffer)) NewDir = ESHFMovementDirection::Backward;
-	}
-	// Links Check
-	else if (LastMovementDirection == ESHFMovementDirection::Left) {
-		if (RawAngle > (-45.f + Buffer)) NewDir = ESHFMovementDirection::Forward;
-		else if (RawAngle < (-135.f - Buffer)) NewDir = ESHFMovementDirection::Backward;
-	}
-	// Rückwärts Check
-	else if (LastMovementDirection == ESHFMovementDirection::Backward) {
-		if (RawAngle > 0.f && RawAngle < (135.f - Buffer)) NewDir = ESHFMovementDirection::Right;
-		else if (RawAngle < 0.f && RawAngle > (-135.f + Buffer)) NewDir = ESHFMovementDirection::Left;
-	}
-
+	OutData.LocomotionAngle = UKismetAnimationLibrary::CalculateDirection(OutData.CharacterVelocity, OutData.ActorRotation);
+	const ESHFMovementDirection NewDir = UAnimFunctionLibrary::CalculateCardinalDirection(OutData.LocomotionAngle, LastMovementDirection);
 	OutData.MovementDirection = NewDir;
-	LastMovementDirection = NewDir; // State für nächsten Frame speichern
+	LastMovementDirection = NewDir;
+	
+	OutData.AccelerationAngle = UKismetAnimationLibrary::CalculateDirection(OutData.CharacterAcceleration, OutData.ActorRotation);
+	const ESHFMovementDirection AccelDir = UAnimFunctionLibrary::CalculateCardinalDirection(OutData.AccelerationAngle, LastAccelerationDirection);
+	OutData.AccelerationDirection = AccelDir;
+	LastAccelerationDirection = AccelDir;
 }
-
 
 
 /**

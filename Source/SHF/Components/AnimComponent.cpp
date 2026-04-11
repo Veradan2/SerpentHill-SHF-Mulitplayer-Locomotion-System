@@ -220,11 +220,6 @@ void UAnimComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 	
 }
 
-void UAnimComponent::OnUpdateSimulatedProxiesMovement()
-{
-	if (MainAnimInstance)
-		MainAnimInstance->OnUpdateSimulatedProxiesMovement();
-}
 
 void UAnimComponent::RegisterMainAnimInstance(USHFAnimInstance* NewAnimInstance)
 {

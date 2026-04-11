@@ -23,8 +23,6 @@ public:
 	virtual void GetLifetimeReplicatedProps(TArray<class FLifetimeProperty>& OutLifetimeProps) const override;
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 	
-	void OnUpdateSimulatedProxiesMovement();
-	
 	void RegisterMainAnimInstance(USHFAnimInstance* NewAnimInstance);
 	
 	

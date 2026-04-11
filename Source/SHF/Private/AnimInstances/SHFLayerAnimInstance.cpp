@@ -6,13 +6,14 @@
 
 #include "SequenceEvaluatorLibrary.h"
 #include "SequencePlayerLibrary.h"
-//#include "DistanceMatching/AnimDistanceMatchingLibrary.h"
 #include "AnimDistanceMatchingLibrary.h"
 #include "Animation/AnimNodeReference.h"
 #include "AnimInstances/SHFAnimInstance.h"
 #include "Data/AnimSetAsset.h"
 #include "Engine/PackageMapClient.h"
 #include "GameFramework/GameStateBase.h"
+#include "Libraries/AnimFunctionLibrary.h"
+
 
 /*
  **		------	LAYER ANIM INSTANCE ------
@@ -43,10 +44,10 @@ void USHFLayerAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
 {
 	Super::NativeThreadSafeUpdateAnimation(DeltaSeconds);
 	// Worker-Thread holt sich die Daten ab
-	const FSHFLayerAnimInstanceProxy& Proxy = GetProxyOnAnyThread<FSHFLayerAnimInstanceProxy>();
+	const FSHFAnimInstanceProxy& Proxy = GetProxyOnAnyThread<FSHFAnimInstanceProxy>();
     
 	// Hier spiegelst du die Daten in die lokale Variable für das AnimBP
-	SharedData = Proxy.SharedDataProxy;	
+	SharedData = Proxy.SharedData;	
 }
 
 FTurnInPlaceAnimSet USHFLayerAnimInstance::GetTurnInPlaceAnimSet_Implementation() const
@@ -57,10 +58,10 @@ FTurnInPlaceAnimSet USHFLayerAnimInstance::GetTurnInPlaceAnimSet_Implementation(
 
 void USHFLayerAnimInstance::UpdateFromMain(const FSHFSharedAnimData& NewData)
 {
-	FSHFLayerAnimInstanceProxy& Proxy = GetProxyOnGameThread<FSHFLayerAnimInstanceProxy>();
-	Proxy.SharedDataProxy = NewData;
+	FSHFAnimInstanceProxy& Proxy = GetProxyOnGameThread<FSHFAnimInstanceProxy>();
+	Proxy.SharedData = NewData;
 	
-	if (Proxy.SharedDataProxy.bIsMoving)
+	if (Proxy.SharedData.bIsMoving)
 		IdleActiveTimeStamp = GetWorld()->GetTimeSeconds(); //Reset
 	
 	OnDataUpdated();
@@ -73,7 +74,7 @@ void USHFLayerAnimInstance::UpdateFromMain(const FSHFSharedAnimData& NewData)
 
 FAnimInstanceProxy* USHFLayerAnimInstance::CreateAnimInstanceProxy()
 {
-	return new FSHFLayerAnimInstanceProxy(this);
+	return new FSHFAnimInstanceProxy(this);
 }
 
 void USHFLayerAnimInstance::Idle_OnInitialUpdate(const FAnimUpdateContext& Context, const FAnimNodeReference& Node)
@@ -133,6 +134,26 @@ void USHFLayerAnimInstance::Idle_OnUpdate(const FAnimUpdateContext& Context, con
 	}
 }
 
+void USHFLayerAnimInstance::Movement_OnBecomeRelevant(const FAnimUpdateContext& Context, const FAnimNodeReference& Node)
+{
+	EAnimNodeReferenceConversionResult Result;
+	FSequencePlayerReference Player = USequencePlayerLibrary::ConvertToSequencePlayer(Node, Result);
+    
+	if (Result == EAnimNodeReferenceConversionResult::Succeeded)
+	{
+		// Hole die Ziel-Animation für den IST-Zustand
+		if (FCardinalAnimationSet* Set = MovementAnims_Cached.Find(SharedData.Gait))
+		{
+			UAnimSequence* InitialAnim = Set->SelectAnim(SharedData.MovementDirection);
+            
+			// WICHTIG: Hier Blending auf 0.0f setzen!
+			// Das sorgt dafür, dass der Player SOFORT auf dieser Anim steht,
+			// während die State Machine im Main-ABP den eigentlichen 0.2s Blend macht.
+			USequencePlayerLibrary::SetSequenceWithInertialBlending(Context, Player, InitialAnim, 0.0f);
+		}
+	}
+}
+
 void USHFLayerAnimInstance::Movement_OnUpdate(const FAnimUpdateContext& Context, const FAnimNodeReference& Node)
 {
 	EAnimNodeReferenceConversionResult Result;
@@ -149,82 +170,96 @@ void USHFLayerAnimInstance::Movement_OnUpdate(const FAnimUpdateContext& Context,
 
 		if (TargetAnim)
 		{
-			// 2. WICHTIGSTER CHECK: Was spielt gerade?
 			UAnimSequenceBase* CurrentAnim = USequencePlayerLibrary::GetSequencePure(Player);
-            
-			// NUR wenn die neue Animation eine ANDERE ist als die aktuelle,
-			// rufen wir SetSequence auf. Das verhindert den Dauer-Reset!
+         
 			if (CurrentAnim != TargetAnim)
 			{
 				USequencePlayerLibrary::SetSequenceWithInertialBlending(Context, Player, TargetAnim, 0.2f);
-                
-				// Debug-Log: Erscheint dieser Log nur beim Richtungswechsel? 
-				// Wenn er durchgehend spamt, stimmt der Vergleich != nicht.
-				UE_LOG(LogTemp, Log, TEXT("SHF: Richtung gewechselt zu %s"), *TargetAnim->GetName());
 			}
 		}
 
 		// 3. PlayRate setzen (Darf jeden Frame passieren, da es die Zeit nicht zurücksetzt)
 		// Lyra Walk ist ca. 160 units/s, Run ca. 380 units/s
-		float RefSpeed = (SharedData.Gait == ESHFGait::Walk) ? 160.f : 480.f;
-		
-		float SafePlayRate = FMath::Max(0.1f, SharedData.GroundSpeed / RefSpeed);
+
+		float SafePlayRate = FMath::Max(0.1f, SharedData.GroundSpeed / UAnimFunctionLibrary::GetAnimRefSpeed(SharedData.Gait));
 		USequencePlayerLibrary::SetPlayRate(Player, SafePlayRate);
 	}	
 }
 
-void USHFLayerAnimInstance::Start_OnInitialUpdate(const FAnimUpdateContext& Context, const FAnimNodeReference& Node)
-{
-	EAnimNodeReferenceConversionResult Result;
-	const FSequenceEvaluatorReference SequenceEvaluator = USequenceEvaluatorLibrary::ConvertToSequenceEvaluator(Node, Result);
-	if (Result == EAnimNodeReferenceConversionResult::Succeeded)
-	{
-		if (FCardinalAnimationSet* Set = MovementAnims_Cached.Find(SharedData.Gait))
-		{
-			UAnimSequenceBase* AnimSeq = Set->SelectAnim(SharedData.MovementDirection);
-			USequenceEvaluatorLibrary::SetSequenceWithInertialBlending(Context, SequenceEvaluator, AnimSeq, 0.2f);
-		}
-		
-	}
-}
 
 void USHFLayerAnimInstance::Start_OnBecomeRelevant(const FAnimUpdateContext& Context, const FAnimNodeReference& Node)
 {
-	//Get Start location
 	const FSHFAnimInstanceProxy& Proxy = GetProxyOnAnyThread<FSHFAnimInstanceProxy>();
 	
-	StartLocation = Proxy.GetComponentTransform().GetLocation();
-	DistanceTraveled = 0.f;
+	ESHFMovementDirection AccelDir = DetermineAccelerationDirection(Proxy); 
 	
-	//Set Start time to 0
-	EAnimNodeReferenceConversionResult Result;
-	const FSequenceEvaluatorReference SequenceEvaluator = USequenceEvaluatorLibrary::ConvertToSequenceEvaluator(Node, Result);
-	if (Result == EAnimNodeReferenceConversionResult::Succeeded)
+	Start_MaxDistance = 0.f;
+	bStartFinished = false;
+	StartAnimDeltaTime = 0.f;
+	
+	// 3. Animation basierend auf dem Winkel wählen
+
+	LastAccelerationDirection = AccelDir;
+	
+	if (UAnimSequence* SelectedAnim = StartAnims_Cached.Find(SharedData.Gait)->SelectAnim(AccelDir))
 	{
-		USequenceEvaluatorLibrary::SetExplicitTime(SequenceEvaluator, 0.f);
+		float AnimLength = SelectedAnim->GetPlayLength();
+		Start_MaxDistance = SelectedAnim->EvaluateCurveData(FName("distance"), AnimLength);
+		
+		EAnimNodeReferenceConversionResult Result;
+		const FSequenceEvaluatorReference SequenceEvaluator = USequenceEvaluatorLibrary::ConvertToSequenceEvaluator(Node, Result);
+		if (Result == EAnimNodeReferenceConversionResult::Succeeded)
+		{
+			USequenceEvaluatorLibrary::SetSequenceWithInertialBlending(Context, SequenceEvaluator, SelectedAnim, 0.1f);
+			USequenceEvaluatorLibrary::SetExplicitTime(SequenceEvaluator, 0.f);
+		}
 	}
+	
+	StartLocation = Proxy.GetComponentTransform().GetLocation() * FVector(1.f, 1.f, 0.f);
 }
 
 void USHFLayerAnimInstance::Start_OnUpdate(const FAnimUpdateContext& Context, const FAnimNodeReference& Node)
 {
-	const FSHFAnimInstanceProxy& Proxy = GetProxyOnAnyThread<FSHFAnimInstanceProxy>();
-	
-	FVector CurrentLocation = Proxy.GetComponentTransform().GetLocation();
-	
+	FSHFAnimInstanceProxy& Proxy = GetProxyOnAnyThread<FSHFAnimInstanceProxy>();
 	EAnimNodeReferenceConversionResult Result;
-	const FSequenceEvaluatorReference SequenceEvaluator = USequenceEvaluatorLibrary::ConvertToSequenceEvaluator(Node, Result);
+	const FSequenceEvaluatorReference Eval = USequenceEvaluatorLibrary::ConvertToSequenceEvaluator(Node, Result);
+
 	if (Result == EAnimNodeReferenceConversionResult::Succeeded)
 	{
-		DistanceTraveled = FVector::Distance(CurrentLocation, StartLocation);
-		UAnimDistanceMatchingLibrary::AdvanceTimeByDistanceMatching(
-			Context, 
-			SequenceEvaluator, 
-			DistanceTraveled, 
-			FName("Distance") 
-		);
+		
+		DistanceTraveled = FVector::Distance(Proxy.GetComponentTransform().GetLocation() * FVector(1.f, 1.f, 0.f), StartLocation);
+
+		// 2. Sicherheits-Check: Passt die Animation noch zur Eingabe?
+		ESHFMovementDirection AccelDir = DetermineAccelerationDirection(Proxy);
+		
+		UAnimSequenceBase* CurrentAnim = USequenceEvaluatorLibrary::GetSequence(Eval);
+		UAnimSequenceBase* NewDesiredAnim = StartAnims_Cached.Find(SharedData.Gait)->SelectAnim(AccelDir);
+
+		if (NewDesiredAnim != CurrentAnim && DistanceTraveled < 15.0f) // Nur am Anfang korrigieren
+		{
+
+			USequenceEvaluatorLibrary::SetSequenceWithInertialBlending(Context, Eval, NewDesiredAnim, 0.15f);
+            
+		}
+		
+		StartAnimDeltaTime += Context.GetContext()->GetDeltaTime();
+		bool bDistReached = (Start_MaxDistance > 0.f && (DistanceTraveled / Start_MaxDistance >= 0.8f));
+		bool bTimeReached = (StartAnimDeltaTime > (NewDesiredAnim->GetPlayLength() * 0.8f));
+		
+		bStartFinished = bDistReached || bTimeReached;
+		
+		if (!bStartFinished)
+			UAnimDistanceMatchingLibrary::AdvanceTimeByDistanceMatching(Context, Eval, DistanceTraveled, FName("distance"));
+		else
+		{
+			float VelocityMagnitude = Proxy.SharedData.GroundSpeed;
+			float PlayRateMultiplier = FMath::Clamp(VelocityMagnitude / UAnimFunctionLibrary::GetAnimRefSpeed(SharedData.Gait), 0.8f, 1.5f);
+
+			USequenceEvaluatorLibrary::AdvanceTime(Context, Eval, Context.GetContext()->GetDeltaTime()*PlayRateMultiplier);			
+		}
 	}
-	
 }
+
 
 void USHFLayerAnimInstance::CalculateIdleIndex()
 {
@@ -285,4 +320,41 @@ void USHFLayerAnimInstance::SetAnimSet(ESHFEquipMode EquipMode, bool bEnforce)
 		}
 		bFirstInit = false;
 	}
+}
+
+ESHFMovementDirection USHFLayerAnimInstance::DetermineAccelerationDirection(const FSHFAnimInstanceProxy& Proxy)
+{
+	// 1. Wunschrichtung (Welt)
+	FVector Acceleration = Proxy.SharedData.CharacterAcceleration;
+    
+	if (Acceleration.IsNearlyZero()) {
+		Acceleration = Proxy.GetActorTransform().GetUnitAxis(EAxis::X);
+	}
+
+	FRotator MeshRotation = Proxy.GetComponentTransform().Rotator();
+
+	// 2. Korrektur des Blueprint-Offsets: 
+	// Wenn dein Mesh im BP um -90 Grad gedreht ist, addieren wir diese 90 Grad hier wieder drauf,
+	// um die "echte" Blickrichtung der Nase des Charakters zu erhalten.
+	float ActualVisualYaw = FRotator::NormalizeAxis(MeshRotation.Yaw + 90.0f); 
+
+	// 3. Berechne den relativen Winkel zur Wunschrichtung (Acceleration)
+	float RelativeAngle = FRotator::NormalizeAxis(Acceleration.ToOrientationRotator().Yaw - ActualVisualYaw);
+	
+	ESHFMovementDirection AccelDir;
+
+	if (RelativeAngle >= -45.f && RelativeAngle <= 45.f) {
+		AccelDir = ESHFMovementDirection::Forward;
+	}
+	else if (RelativeAngle > 45.f && RelativeAngle <= 135.f) {
+		AccelDir = ESHFMovementDirection::Right;
+	}
+	else if (RelativeAngle < -45.f && RelativeAngle >= -135.f) {
+		AccelDir = ESHFMovementDirection::Left;
+	}
+	else {
+		// Deckt den Bereich von 135 bis 180 und -135 bis -180 ab
+		AccelDir = ESHFMovementDirection::Backward;
+	}
+	return AccelDir;	
 }

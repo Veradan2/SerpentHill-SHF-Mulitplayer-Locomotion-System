@@ -56,8 +56,6 @@ public:
 	void RegisterLayer(USHFLayerAnimInstance* Layer);
 	FORCEINLINE void UnregisterLayer(USHFLayerAnimInstance* OldLayer) { LinkedLayers.Remove(OldLayer); }
 	
-	void OnUpdateSimulatedProxiesMovement();
-	
 	virtual FTurnInPlaceCurveValues GetTurnInPlaceCurveValues_Implementation() const override;
 	virtual FTurnInPlaceAnimSet GetTurnInPlaceAnimSet_Implementation() const override;
 	
@@ -88,6 +86,8 @@ protected:
 	
 	// Speichert die letzte Richtung für die Hysterese
 	ESHFMovementDirection LastMovementDirection = ESHFMovementDirection::Forward;
+	ESHFMovementDirection LastAccelerationDirection = ESHFMovementDirection::Forward;
+	
 	
 	
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
@@ -123,7 +123,6 @@ protected:
 
 private:
 	void CalculateMovementDirection(float DeltaSeconds, FSHFSharedAnimData& OutData);
-	
 	bool GetReferences();
 	
 protected:
@@ -156,4 +155,7 @@ protected:
 	
 	ESHFGait CurrentMovementGait = ESHFGait::Run;
 	ESHFEquipMode CurrentEquipMode = ESHFEquipMode::Mode1;
+	
+	ESHFGait PreviousMovementGait;
+	ESHFEquipMode PreviousEquipMode;
 };

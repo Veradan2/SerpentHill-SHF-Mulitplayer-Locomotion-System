@@ -21,9 +21,7 @@ public:
 	
 	UFUNCTION(BlueprintNativeEvent, Category = "SHF|Setup")
 	void LinkAnimLayer(TSubclassOf<UAnimInstance> NewLayerClass);
-	
-	
-	virtual void OnRep_ReplicatedMovement() override;
+
 
 protected:
 	virtual bool ShouldReplicateAcceleration() const override { return true; }

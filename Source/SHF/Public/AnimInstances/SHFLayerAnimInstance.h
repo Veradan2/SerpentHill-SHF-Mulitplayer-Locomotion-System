@@ -5,40 +5,17 @@
 #define IDLE_BREAK_UPDATE_PERIOD 3.0
 
 #include "CoreMinimal.h"
+#include "SHFAnimInstance.h"
 #include "SHFGlobals.h"
 #include "TurnInPlaceAnimInterface.h"
 #include "TurnInPlaceTypes.h"
 #include "Animation/AnimInstance.h"
-#include "Animation/AnimInstanceProxy.h"
-#include "Kismet2/BlueprintEditorUtils.h"
 #include "SHFLayerAnimInstance.generated.h"
 
 class UAnimSetAsset;
 struct FAnimNodeReference;
 struct FAnimUpdateContext;
 struct FSHFSharedAnimData;
-
-
-
-/*
- **		------	P R O X Y ------
- */	
-USTRUCT()
-struct FSHFLayerAnimInstanceProxy : public FAnimInstanceProxy 
-{
-	
-	GENERATED_BODY()
-	FSHFLayerAnimInstanceProxy() : FAnimInstanceProxy() {}
-	FSHFLayerAnimInstanceProxy(UAnimInstance* InAnimInstance) : FAnimInstanceProxy(InAnimInstance) {}
-	
-    
-	// Die "Sammelstelle" für den Game-Thread
-	FSHFSharedAnimData SharedDataProxy;
-
-	virtual void Update(float DeltaSeconds) override {
-		FAnimInstanceProxy::Update(DeltaSeconds);
-	}
-};
 
 
 /**
@@ -50,6 +27,13 @@ class SHF_API USHFLayerAnimInstance : public UAnimInstance, public ITurnInPlaceA
 	GENERATED_BODY()
 	
 public:
+	/**
+	 **
+	 **/
+	UPROPERTY(BlueprintReadOnly, Category = "SHF|Core", meta = (BlueprintThreadSafe))
+	bool bStartFinished = false;
+	
+	
 	virtual void NativeInitializeAnimation() override;
 	virtual void NativeUpdateAnimation(float DeltaSeconds) override;
 	virtual void NativeThreadSafeUpdateAnimation(float DeltaSeconds) override;
@@ -78,14 +62,14 @@ protected:
 	 *			Movement(Cycle) Sequence Player
 	 */
 	UFUNCTION(BlueprintCallable, Category = "SHF|AnimNodeFunctions", meta = (BlueprintThreadSafe))
+	void Movement_OnBecomeRelevant(const FAnimUpdateContext& Context, const FAnimNodeReference& Node);
+	
+	UFUNCTION(BlueprintCallable, Category = "SHF|AnimNodeFunctions", meta = (BlueprintThreadSafe))
 	void Movement_OnUpdate(const FAnimUpdateContext& Context, const FAnimNodeReference& Node);
 	
 	/*
 	 *			Start Sequence Evaluator
 	 */
-	UFUNCTION(BlueprintCallable, Category = "SHF|AnimNodeFunctions", meta = (BlueprintThreadSafe))
-	void Start_OnInitialUpdate(const FAnimUpdateContext& Context, const FAnimNodeReference& Node);
-	
 	UFUNCTION(BlueprintCallable, Category = "SHF|AnimNodeFunctions", meta = (BlueprintThreadSafe))
 	void Start_OnBecomeRelevant(const FAnimUpdateContext& Context, const FAnimNodeReference& Node);
 	
@@ -149,6 +133,10 @@ private:
 	
 	float DistanceTraveled;
 	FVector StartLocation;
+	float Start_MaxDistance = 0.f;
+	float StartAnimDeltaTime = 0.f;
 	
+	ESHFMovementDirection LastAccelerationDirection = ESHFMovementDirection::Forward;
 	
+	ESHFMovementDirection DetermineAccelerationDirection(const FSHFAnimInstanceProxy& Proxy);
 };

@@ -4,6 +4,22 @@
 #include "TurnInPlaceTypes.h"
 #include "SHFGlobals.generated.h"
 
+
+USTRUCT(BlueprintType)
+struct FMovementState
+{
+	GENERATED_BODY()
+	
+	UPROPERTY(BlueprintReadOnly, Category = "SHF|State")
+	bool bGateChanged = false;
+	
+	UPROPERTY(BlueprintReadOnly, Category = "SHF|State")
+	bool bEquipModeChanged = false;
+};
+
+
+
+
 UENUM(BlueprintType)
 enum class ESHFAnimLayerTag : uint8
 {
@@ -146,6 +162,9 @@ USTRUCT(BlueprintType)
 struct FSHFSharedAnimData {
 	GENERATED_BODY()
 	
+	UPROPERTY(BlueprintReadOnly, Category = "SHF|Locomotion")
+	FMovementState MovementState = FMovementState();
+	
 	// Grundlegende Bewegung
 	UPROPERTY(BlueprintReadOnly, Category = "SHF|Locomotion")
 	float GroundSpeed = 0.f;
@@ -172,6 +191,9 @@ struct FSHFSharedAnimData {
 	float LocomotionAngle = 0.f;
 	
 	UPROPERTY(BlueprintReadOnly, Category = "SHF|State")
+	float AccelerationAngle = 0.f;
+	
+	UPROPERTY(BlueprintReadOnly, Category = "SHF|State")
 	ESHFGait Gait = ESHFGait::Run;
 	
 	UPROPERTY(BlueprintReadOnly, Category = "SHF|State")
@@ -179,6 +201,9 @@ struct FSHFSharedAnimData {
 	
 	UPROPERTY(BlueprintReadOnly, Category = "SHF|State")
 	ESHFMovementDirection MovementDirection = ESHFMovementDirection::Forward;
+	
+	UPROPERTY(BlueprintReadOnly, Category = "SHF|State")
+	ESHFMovementDirection AccelerationDirection = ESHFMovementDirection::Forward;
 	
 	UPROPERTY(BlueprintReadOnly, Category = "SHF|State")
 	float OrientationWarpingLocomotionAngle = 0.f; // 0 bis 1 (Wie stark soll gestreckt werden?)
@@ -203,6 +228,15 @@ struct FSHFSharedAnimData {
 	
 	UPROPERTY(BlueprintReadOnly)
 	FTurnInPlaceAnimSet TurnInPlaceAnimSet;
+	
+	UPROPERTY(BlueprintReadOnly)
+	float Start_DistanceTraveled = 0.f;
+	
+	UPROPERTY(BlueprintReadOnly)
+	float Start_MaxDistance = 0.f;
+	
+	UPROPERTY(BlueprintReadOnly)
+	bool bStartFinished = false;
 };
 
 USTRUCT(BlueprintTYpe)
@@ -218,6 +252,9 @@ struct FTransitionRuleContainer
 	
 	UPROPERTY(BlueprintReadOnly)
 	bool bCycle2Idle = false;
+	
+	UPROPERTY(BlueprintReadOnly)
+	bool bStart2CycleCond2 = false;
 };
 
 
