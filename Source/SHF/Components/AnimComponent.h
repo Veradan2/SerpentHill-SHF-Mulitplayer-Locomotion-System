@@ -8,6 +8,7 @@
 #include "AnimComponent.generated.h"
 
 
+class UCharacterMovementComponent;
 class USHFAnimInstance;
 enum class ESHFTurnState : uint8;
 
@@ -53,6 +54,9 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "SHF|Config")
 	TMap<ESHFAnimLayerTag,TSubclassOf<UAnimInstance>> LayerConfig;
 	
+	UPROPERTY(EditAnywhere, Category = "SHF|Config")
+	TMap<ESHFGait, FCMCMovementConfig> GaitConfig;
+	
 	UPROPERTY(ReplicatedUsing = OnRep_CurrentLayerTag)
 	ESHFAnimLayerTag CurrentLayerTag = ESHFAnimLayerTag::None;
 	
@@ -83,9 +87,14 @@ protected:
 	
 	void ApplyLayer(TSubclassOf<UAnimInstance> LayerClass);
 	
+	void ApplyMovementConfig (const FCMCMovementConfig& NewConfig);
+	
 private:
 	UPROPERTY()
 	TObjectPtr<ACharacter> OwningCharacter;
+	
+	UPROPERTY()
+	TObjectPtr<UCharacterMovementComponent> MovementComp;
 	
 	bool bInitialLayerLinked = false;
 	bool bFirstLayerLink = true;

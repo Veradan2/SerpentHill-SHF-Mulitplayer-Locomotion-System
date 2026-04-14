@@ -7,6 +7,7 @@
 #include "AnimInstances/SHFAnimInstance.h"
 #include "Character/SHFCharacterBase.h"
 #include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "UniversalObjectLocators/AnimInstanceLocatorFragment.h"
 
@@ -58,6 +59,11 @@ void UAnimComponent::SetMovementGait(ESHFGait NewMovementGait)
 	{
 		Server_SetMovementGait(NewMovementGait);
 	}
+	
+	//Set the Config locally in every case
+	if (FCMCMovementConfig* CMCConfig = GaitConfig.Find(NewMovementGait))
+		ApplyMovementConfig(*CMCConfig);
+	
 	CurrentMovementGait = NewMovementGait;
 }
 
@@ -96,6 +102,11 @@ bool UAnimComponent::Server_SetEquipMode_Validate(ESHFEquipMode NewEquipMode)
 void UAnimComponent::Server_SetMovementGait_Implementation(ESHFGait NewMovementGait)
 {
 	CurrentMovementGait = NewMovementGait;
+	if (FCMCMovementConfig* MovementConfig = GaitConfig.Find(NewMovementGait))
+	{
+		ApplyMovementConfig(*MovementConfig);
+	}
+	
 	OnRep_CurrentMovementGait();
 }
 
@@ -173,10 +184,25 @@ void UAnimComponent::ApplyLayer(TSubclassOf<UAnimInstance> LayerClass)
 	
 }
 
+void UAnimComponent::ApplyMovementConfig(const FCMCMovementConfig& NewConfig)
+{
+	if (!MovementComp) return;
+	
+	MovementComp->MaxWalkSpeed = NewConfig.MaxWalkSpeed;
+	MovementComp->MaxAcceleration = NewConfig.MaxAcceleration;
+	MovementComp->BrakingFriction = NewConfig.BrakingFriction;
+	MovementComp->BrakingDecelerationWalking = NewConfig.BrakingDecelerationWalking;
+	MovementComp->BrakingFrictionFactor = NewConfig.BrakingFrictionFactor;
+	MovementComp->GroundFriction = NewConfig.GroundFriction;
+	MovementComp->bUseSeparateBrakingFriction = NewConfig.bUseSeparateBrakingFriction;
+}
+
 void UAnimComponent::BeginPlay()
 {
 	Super::BeginPlay();
 	OwningCharacter = Cast<ACharacter>(GetOwner());
+	if (OwningCharacter)
+		MovementComp = OwningCharacter->GetCharacterMovement();
 
 	// If we are the server, set Initial Layer Type
 	if (GetOwner()->HasAuthority())

@@ -483,7 +483,7 @@ struct ACTORTURNINPLACE_API FTurnInPlaceAnimGraphData
 		, bWantsPseudoAnimState(false)
 	{}
 
-	/** The current Anim Set containing the turn anims to play and turn params */
+	/** The current AnimArray Set containing the turn anims to play and turn params */
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadWrite, Category=Turn)
 	FTurnInPlaceAnimSet AnimSet;
 

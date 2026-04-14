@@ -25,10 +25,7 @@ void ASHFCharacterBase::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 	
-	/*if (!IsLocallyControlled())
-	{
-		 bUseControllerRotationYaw = GetVelocity().Size2D() > 10.f;
-	}*/
+	
 }
 
 void ASHFCharacterBase::LinkAnimLayer_Implementation(TSubclassOf<UAnimInstance> NewLayerClass)

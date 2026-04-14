@@ -44,13 +44,13 @@ struct FTiPAnimationSet
 	GENERATED_BODY()
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	UAnimSequence* TurnL90;
+	UAnimSequence* TurnL90 = nullptr;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	UAnimSequence* TurnR90;
+	UAnimSequence* TurnR90 = nullptr;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	UAnimSequence* TurnL180;
+	UAnimSequence* TurnL180 = nullptr;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	UAnimSequence* TurnR180;
+	UAnimSequence* TurnR180 = nullptr;
 };
 
 
@@ -76,27 +76,26 @@ struct FCMCMovementConfig
 {
 	GENERATED_BODY()
 	
-	UPROPERTY(BlueprintReadOnly, Category = "SHF|Movement Config")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SHF|Movement Config")
 	float MaxWalkSpeed = 0.f;
 	
-	UPROPERTY(BlueprintReadOnly, Category = "SHF|Movement Config")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SHF|Movement Config")
 	float MaxAcceleration = 0.f;
 	
-	UPROPERTY(BlueprintReadOnly, Category = "SHF|Movement Config")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SHF|Movement Config")
 	float BrakingDecelerationWalking = 0.f;
 	
-	UPROPERTY(BlueprintReadOnly, Category = "SHF|Movement Config")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SHF|Movement Config")
 	float GroundFriction = 0.f;
 	
-	UPROPERTY(BlueprintReadOnly, Category = "SHF|Movement Config")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SHF|Movement Config")
 	float BrakingFrictionFactor = 0.f;
 	
-	UPROPERTY(BlueprintReadOnly, Category = "SHF|Movement Config")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SHF|Movement Config")
 	float BrakingFriction  = 0.f;
 	
-	UPROPERTY(BlueprintReadOnly, Category = "SHF|Movement Config")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "SHF|Movement Config")
 	bool bUseSeparateBrakingFriction = false;
-	
 };
 
 
@@ -154,7 +153,7 @@ UENUM(BlueprintType)
 enum class ESHFGait : uint8 {
 	Walk,
 	Run,
-	Sprint
+	Crouch
 };
 
 // Dieses Struct bündelt alles, was wir an die Layer schicken wollen
@@ -165,7 +164,9 @@ struct FSHFSharedAnimData {
 	UPROPERTY(BlueprintReadOnly, Category = "SHF|Locomotion")
 	FMovementState MovementState = FMovementState();
 	
-	// Grundlegende Bewegung
+	UPROPERTY(BlueprintReadOnly, Category = "SHF|Locomotion")
+	FVector WorldLocation = FVector::ZeroVector;
+	
 	UPROPERTY(BlueprintReadOnly, Category = "SHF|Locomotion")
 	float GroundSpeed = 0.f;
 	
@@ -173,13 +174,13 @@ struct FSHFSharedAnimData {
 	FVector CharacterVelocity = FVector::ZeroVector;
 	
 	UPROPERTY(BlueprintReadOnly, Category = "SHF|Locomotion")
-	FVector CharacterAcceleration = FVector::ZeroVector;
-
-	UPROPERTY(BlueprintReadOnly, Category = "SHF|Locomotion")
 	bool bIsMoving = false;
 	
 	UPROPERTY(BlueprintReadOnly, Category = "SHF|Locomotion")
 	bool bIsAtMaxWalkSpeed = false;
+	
+	UPROPERTY(BlueprintReadOnly, Category = "SHF|Locomotion")
+	FVector CharacterAcceleration = FVector::ZeroVector;
 	
 	UPROPERTY(BlueprintReadOnly, Category = "SHF|Locomotion")
 	bool bIsAccelerating = false;
@@ -189,6 +190,9 @@ struct FSHFSharedAnimData {
 	
 	UPROPERTY(BlueprintReadOnly, Category = "SHF|State")
 	float LocomotionAngle = 0.f;
+	
+	UPROPERTY(BlueprintReadOnly, Category = "SHF|State")
+	float SmoothedLocomotionAngle = 0.f;
 	
 	UPROPERTY(BlueprintReadOnly, Category = "SHF|State")
 	float AccelerationAngle = 0.f;
@@ -219,6 +223,9 @@ struct FSHFSharedAnimData {
 	
 	UPROPERTY(BlueprintReadOnly)
 	FRotator LastFrameActorRotation = FRotator::ZeroRotator;
+	
+	UPROPERTY(BlueprintReadOnly)
+	float DeltaActorYaw = 0.f;
 
 	UPROPERTY(BlueprintReadOnly)
 	FCMCStates CMCStates;
@@ -230,13 +237,22 @@ struct FSHFSharedAnimData {
 	FTurnInPlaceAnimSet TurnInPlaceAnimSet;
 	
 	UPROPERTY(BlueprintReadOnly)
-	float Start_DistanceTraveled = 0.f;
-	
-	UPROPERTY(BlueprintReadOnly)
-	float Start_MaxDistance = 0.f;
-	
-	UPROPERTY(BlueprintReadOnly)
 	bool bStartFinished = false;
+	
+	UPROPERTY(BlueprintReadOnly)
+	bool bShouldPlayExplosiveStart = false;
+	
+	UPROPERTY(BlueprintReadOnly)
+	bool bShouldPlayDynamicStop = false;
+	
+	UPROPERTY(BlueprintReadOnly)
+	float Stop_DistanceRemaining = 0.f;
+	
+	UPROPERTY(BlueprintReadOnly)
+	float LeanAngle = 0.f;
+	
+	UPROPERTY(BlueprintReadOnly)
+	float LeanBlendSpaceGait = 0.f;
 };
 
 USTRUCT(BlueprintTYpe)
@@ -255,6 +271,24 @@ struct FTransitionRuleContainer
 	
 	UPROPERTY(BlueprintReadOnly)
 	bool bStart2CycleCond2 = false;
+	
+	UPROPERTY(BlueprintReadOnly)
+	bool bCycle2Stop = false;
+	
+	UPROPERTY(BlueprintReadOnly)
+	bool bStop2Idle = false;
+	
+	UPROPERTY(BlueprintReadOnly)
+	bool bStop2Start = false;
+	
+	UPROPERTY(BlueprintReadOnly)
+	bool bStart2Stop = false;
+	
+	UPROPERTY(BlueprintReadOnly)
+	bool bIdle2Cycle = false;
+	
+	UPROPERTY(BlueprintReadOnly)
+	bool bStart2Idle = false;
 };
 
 

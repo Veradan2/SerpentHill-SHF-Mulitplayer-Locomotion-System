@@ -73,6 +73,8 @@ void USHFAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	
 	// 1. Paket schnüren
 	FSHFSharedAnimData NewData;
+	NewData.WorldLocation = OwningPawn->GetActorLocation();
+	
 	NewData.CharacterVelocity = OwningPawn->GetVelocity();
 	NewData.GroundSpeed = NewData.CharacterVelocity.Size2D();
 	NewData.bIsMoving = NewData.GroundSpeed > 10.f;
@@ -80,15 +82,30 @@ void USHFAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	NewData.EquipMode = AnimComp->GetCurrentEquipMode();
 	
 	NewData.CharacterAcceleration = MovementCompRef->GetCurrentAcceleration();
-	NewData.bIsAccelerating = NewData.CharacterAcceleration.Size() > 0.f;
+	NewData.bIsAccelerating = NewData.CharacterAcceleration.Size2D() > 0.f;
+	float AccelAmount = NewData.CharacterAcceleration.Size2D() / MovementCompRef->MaxAcceleration;
+	
+	NewData.bShouldPlayExplosiveStart = NewData.bIsAccelerating && (AccelAmount > 0.7f);
+	NewData.bShouldPlayDynamicStop = NewData.GroundSpeed > 150.f;	
 	
 	NewData.LocomotionAngle = UKismetAnimationLibrary::CalculateDirection(NewData.CharacterVelocity, OwningPawn->GetActorRotation());
-	NewData.OrientationWarpingLocomotionAngle = -NewData.LocomotionAngle;
+	NewData.SmoothedLocomotionAngle = FMath::FixedTurn(
+		Proxy.SharedData.SmoothedLocomotionAngle, 
+		NewData.LocomotionAngle, 
+		DeltaSeconds * 12.0f 
+		
+	);
+	//NewData.OrientationWarpingLocomotionAngle = -NewData.LocomotionAngle;	//this is calculated by the layers which need the value, LocomotionAngle also works
+	
+	
 	NewData.StrideWarpingLocomotionSpeed = NewData.GroundSpeed;
 	NewData.StrideWarpingAlpha = FMath::Clamp(NewData.GroundSpeed / 50.f, 0.f, 1.f);
 	
 	NewData.LastFrameActorRotation = Proxy.SharedData.ActorRotation;
 	NewData.ActorRotation = OwningPawn->GetActorRotation();
+	NewData.DeltaActorYaw = UKismetMathLibrary::NormalizeAxis(NewData.ActorRotation.Yaw - Proxy.SharedData.LastFrameActorRotation.Yaw );
+	NewData.RootYawOffset = Proxy.SharedData.RootYawOffset + NewData.DeltaActorYaw;
+	
 	
 	NewData.CMCStates.bIsCrouching = MovementCompRef->IsCrouching();
 	NewData.CMCStates.bIsFalling = MovementCompRef->IsFalling();
@@ -109,10 +126,15 @@ void USHFAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	NewData.MovementState.bEquipModeChanged = CurrentEquipMode != PreviousEquipMode;
 	
 	
-	const float DeltaActorYaw = UKismetMathLibrary::NormalizeAxis(Proxy.SharedData.ActorRotation.Yaw - NewData.ActorRotation.Yaw);
-	NewData.RootYawOffset = Proxy.SharedData.RootYawOffset + DeltaActorYaw;		
-	
 	CalculateMovementDirection(DeltaSeconds, NewData);
+	NewData.LeanAngle = FMath::ClampAngle(NewData.DeltaActorYaw / DeltaSeconds / 5.f, -90.f, 90.f) * (
+		NewData.MovementDirection == ESHFMovementDirection::Backward ? -1.f : 1.f);
+	switch (NewData.Gait)
+	{
+		case ESHFGait::Walk : NewData.LeanBlendSpaceGait = .2; break;
+		case ESHFGait::Run: NewData.LeanBlendSpaceGait = 1.f; break;
+		default: NewData.LeanBlendSpaceGait = 0.f; 
+	}
 	
 	/* Daten in den Proxy schreiben */
 
@@ -147,19 +169,44 @@ void USHFAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
 		}
 	}
 	
+	for (const USHFLayerAnimInstance* Layer : LinkedLayers)
+	{
+		if (IsValid(Layer) && (Layer->Stop_DistanceRemaining != 0.f))
+		{
+			Proxy.SharedData.Stop_DistanceRemaining = Layer->Stop_DistanceRemaining;
+			break;
+		}
+	}
+	
 	SharedData = Proxy.SharedData;
 	
 	TurnInPlaceCurveValues = UTurnInPlaceStatics::ThreadSafeUpdateTurnInPlaceCurveValues(this, TurnData);
 	
 	UTurnInPlaceStatics::ThreadSafeUpdateTurnInPlace(TurnData, bCanUpdateTurnInPlace, Proxy.SharedData.CMCStates.bIsStrafing, TurnOutput);
 	
-	TransitionRules.bCycle2Idle = !Proxy.SharedData.bIsMoving;
-	TransitionRules.bIdle2Start = Proxy.SharedData.bIsAccelerating;
+	TransitionRules.bIdle2Start = Proxy.SharedData.bShouldPlayExplosiveStart;
 	TransitionRules.bStart2Cycle = FMath::IsNearlyEqual(Proxy.SharedData.GroundSpeed, Proxy.SharedData.MovementConfig.MaxWalkSpeed, 5.f);
 	TransitionRules.bStart2CycleCond2 = Proxy.SharedData.MovementState.bGateChanged || Proxy.SharedData.MovementState.bEquipModeChanged;
-	
-	bIdleToMovement = Proxy.SharedData.bIsMoving;
-	bMovementToIdle = !Proxy.SharedData.bIsMoving;
+	TransitionRules.bStop2Start = Proxy.SharedData.bIsAccelerating;
+	TransitionRules.bStart2Stop = !Proxy.SharedData.bIsAccelerating;
+	TransitionRules.bIdle2Cycle = Proxy.SharedData.bIsAccelerating && !Proxy.SharedData.bShouldPlayExplosiveStart;
+
+	// 1. Der Weg in den Stop (Nur wenn wir schnell genug für die Anim sind)
+	TransitionRules.bCycle2Stop = !Proxy.SharedData.bIsAccelerating && Proxy.SharedData.bShouldPlayDynamicStop;
+
+	// 2. Der Weg direkt nach Idle (Sanftes Ausrollen ohne Stop-Layer)
+	// WICHTIG: Nur wenn wir NICHT in den Stop-Layer gehen, aber auch nicht mehr beschleunigen.
+	TransitionRules.bCycle2Idle = !Proxy.SharedData.bIsAccelerating && !Proxy.SharedData.bShouldPlayDynamicStop;
+
+	// 3. Stop beenden
+	// Wir erhöhen den Schwellenwert leicht, um das Pendeln zu verhindern (Hysterese)
+	TransitionRules.bStop2Idle = Proxy.SharedData.GroundSpeed < 10.f || Proxy.SharedData.Stop_DistanceRemaining < 5.f;
+
+	// 4. Start-Abbruch (Wichtig!)
+	// Wenn wir im Start sind und loslassen, gehen wir je nach Speed in den Stop oder direkt nach Idle
+	TransitionRules.bStart2Stop = !Proxy.SharedData.bIsAccelerating && Proxy.SharedData.bShouldPlayDynamicStop;
+	// Falls wir sehr langsam waren, direkt zurück nach Idle
+	TransitionRules.bStart2Idle = !Proxy.SharedData.bIsAccelerating && !Proxy.SharedData.bShouldPlayDynamicStop;
 }
 
 void USHFAnimInstance::RegisterLayer(USHFLayerAnimInstance* Layer)
@@ -274,12 +321,12 @@ void USHFAnimInstance::SetupTurnRecovery(const FAnimUpdateContext& Context, cons
 void USHFAnimInstance::CalculateMovementDirection(float DeltaSeconds, FSHFSharedAnimData& OutData)
 {
 	OutData.LocomotionAngle = UKismetAnimationLibrary::CalculateDirection(OutData.CharacterVelocity, OutData.ActorRotation);
-	const ESHFMovementDirection NewDir = UAnimFunctionLibrary::CalculateCardinalDirection(OutData.LocomotionAngle, LastMovementDirection);
+	const ESHFMovementDirection NewDir = UAnimFunctionLibrary::CalculateCardinalDirection(OutData.LocomotionAngle, LastMovementDirection, 15.f, -50.f, 50.f, -130.f, 130.f);
 	OutData.MovementDirection = NewDir;
 	LastMovementDirection = NewDir;
 	
 	OutData.AccelerationAngle = UKismetAnimationLibrary::CalculateDirection(OutData.CharacterAcceleration, OutData.ActorRotation);
-	const ESHFMovementDirection AccelDir = UAnimFunctionLibrary::CalculateCardinalDirection(OutData.AccelerationAngle, LastAccelerationDirection);
+	const ESHFMovementDirection AccelDir = UAnimFunctionLibrary::CalculateCardinalDirection(OutData.AccelerationAngle, LastAccelerationDirection, 15.f, -50.f, 50.f, -130.f, 130.f);
 	OutData.AccelerationDirection = AccelDir;
 	LastAccelerationDirection = AccelDir;
 }
@@ -300,6 +347,7 @@ bool USHFAnimInstance::GetReferences()
 		MovementCompRef = CharacterRef->GetCharacterMovement();
 	return IsValid(CharacterRef) && IsValid(MovementCompRef);
 }
+
 
 FTurnInPlaceAnimSet USHFAnimInstance::GetTurnAnimSet() const
 {

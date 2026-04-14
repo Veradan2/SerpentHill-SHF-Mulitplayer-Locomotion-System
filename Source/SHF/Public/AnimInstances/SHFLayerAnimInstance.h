@@ -10,7 +10,9 @@
 #include "TurnInPlaceAnimInterface.h"
 #include "TurnInPlaceTypes.h"
 #include "Animation/AnimInstance.h"
+#include "Data/AnimSetAsset.h"
 #include "SHFLayerAnimInstance.generated.h"
+
 
 class UAnimSetAsset;
 struct FAnimNodeReference;
@@ -32,6 +34,9 @@ public:
 	 **/
 	UPROPERTY(BlueprintReadOnly, Category = "SHF|Core", meta = (BlueprintThreadSafe))
 	bool bStartFinished = false;
+	
+	UPROPERTY(BlueprintReadOnly, Category = "SHF|Core", meta = (BlueprintThreadSafe))
+	float Stop_DistanceRemaining = 0.f;
 	
 	
 	virtual void NativeInitializeAnimation() override;
@@ -76,8 +81,20 @@ protected:
 	UFUNCTION(BlueprintCallable, Category = "SHF|AnimNodeFunctions", meta = (BlueprintThreadSafe))
 	void Start_OnUpdate(const FAnimUpdateContext& Context, const FAnimNodeReference& Node);
 	
+	/*
+	 *			Start Sequence Evaluator
+	 */
+	UFUNCTION(BlueprintCallable, Category = "SHF|AnimNodeFunctions", meta = (BlueprintThreadSafe))
+	void Stop_OnBecomeRelevant(const FAnimUpdateContext& Context, const FAnimNodeReference& Node);
 	
-		// Local copy of the data exchange struct (thread safe access possible)
+	UFUNCTION(BlueprintCallable, Category = "SHF|AnimNodeFunctions", meta = (BlueprintThreadSafe))
+	void Stop_OnUpdate(const FAnimUpdateContext& Context, const FAnimNodeReference& Node);
+	
+	
+	
+	
+	
+	// Local copy of the data exchange struct (thread safe access possible)
 	UPROPERTY(BlueprintReadOnly, Category = "SHF|Data")
 	FSHFSharedAnimData SharedData;	
 	
@@ -97,10 +114,10 @@ protected:
 	 * Cached Anims (thread-safe!)
 	 */
 	UPROPERTY(BlueprintReadOnly, Category = "SHF|Idle")
-	TObjectPtr<UAnimSequence> IdleAnim_Cached;
+	TMap<ESHFGait, TObjectPtr<UAnimSequence>> IdleAnims_Cached;
 	
 	UPROPERTY(BlueprintReadOnly, Category = "SHF|Idle")
-	TArray<TObjectPtr<UAnimSequence>> IdleBreaks_Cached;
+	TMap<ESHFGait, FAnimSequenceArray> IdleBreaks_Cached;
 	
 	UPROPERTY(BlueprintReadOnly, Category = "SHF|TIP")
 	FTurnInPlaceAnimSet TurnInPlaceAnimSet_Cached;
@@ -114,11 +131,17 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "SHF|Start")
 	TMap<ESHFGait, FCardinalAnimationSet> StartAnims_Cached;
 	
+	UPROPERTY(BlueprintReadOnly, Category = "SHF|Stop")
+	TMap<ESHFGait, FCardinalAnimationSet> StopAnims_Cached;
+	
 	UPROPERTY(BlueprintReadWrite)
 	int32 IdleIndex = 0;
 	
 	
 private:
+	void Stop_UpdateOrientationAngle(float DeltaSeconds);
+	
+	
 	double IdleActiveTimeStamp = 0.;
 	
 	void CalculateIdleIndex();
@@ -136,7 +159,15 @@ private:
 	float Start_MaxDistance = 0.f;
 	float StartAnimDeltaTime = 0.f;
 	
+	FVector StopLocation;
+	float Stop_MaxDistance = 0.f;
+	float DistanceToStop = 0.f;
+	
+	UPROPERTY()
+	TObjectPtr<ACharacter> OwningCharacter = nullptr;
+	
 	ESHFMovementDirection LastAccelerationDirection = ESHFMovementDirection::Forward;
 	
 	ESHFMovementDirection DetermineAccelerationDirection(const FSHFAnimInstanceProxy& Proxy);
+	ESHFMovementDirection DetermineMovementDirection(const FSHFAnimInstanceProxy& Proxy);
 };

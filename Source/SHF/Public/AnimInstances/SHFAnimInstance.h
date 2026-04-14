@@ -34,7 +34,7 @@ struct FSHFAnimInstanceProxy : public FAnimInstanceProxy {
 	void SetRootYawOffset(float NewYawOffset);
 
 protected:
-	// Diese Funktion wird vom Anim-Thread aufgerufen
+	// Diese Funktion wird vom AnimArray-Thread aufgerufen
 	virtual void Update(float DeltaSeconds) override;
 };
 
@@ -87,14 +87,7 @@ protected:
 	// Speichert die letzte Richtung für die Hysterese
 	ESHFMovementDirection LastMovementDirection = ESHFMovementDirection::Forward;
 	ESHFMovementDirection LastAccelerationDirection = ESHFMovementDirection::Forward;
-	
-	
-	
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
-	bool bIdleToMovement = false;
-	
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
-	bool bMovementToIdle = false;
+
 	
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "SHF|Core")
 	FTransitionRuleContainer TransitionRules;

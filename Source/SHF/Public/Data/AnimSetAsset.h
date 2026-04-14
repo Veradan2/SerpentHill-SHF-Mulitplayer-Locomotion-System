@@ -7,22 +7,37 @@
 #include "Engine/DataAsset.h"
 #include "AnimSetAsset.generated.h"
 
+
+USTRUCT(BlueprintType) 
+struct FAnimSequenceArray
+{
+	GENERATED_BODY()
+	
+	UPROPERTY(EditAnywhere)
+	TArray<TObjectPtr<UAnimSequence>> AnimArray;
+};
+
+
+
 USTRUCT(BlueprintType)
 struct FMovementAnimSet
 {
 	GENERATED_BODY()
 	
 	UPROPERTY(EditAnywhere)
-	TObjectPtr<UAnimSequence> IdleAnim;
+	TMap<ESHFGait, TObjectPtr<UAnimSequence>> IdleAnims;
 	
 	UPROPERTY(EditAnywhere)
-	TArray<TObjectPtr<UAnimSequence>> IdleBreakAnims;
+	TMap<ESHFGait, FAnimSequenceArray> IdleBreakAnims;
 	
 	UPROPERTY(EditAnywhere)
 	TMap<ESHFGait, FCardinalAnimationSet> CycleAnims;
 	
 	UPROPERTY(EditAnywhere)
 	TMap<ESHFGait, FCardinalAnimationSet> StartAnims;
+	
+	UPROPERTY(EditAnywhere)
+	TMap<ESHFGait, FCardinalAnimationSet> StopAnims;
 	
 	UPROPERTY(EditAnywhere)
 	FTurnInPlaceAnimSet TurnInPlaceAnimSet;

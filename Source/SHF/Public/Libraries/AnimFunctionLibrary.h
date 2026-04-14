@@ -21,7 +21,8 @@ class SHF_API UAnimFunctionLibrary : public UBlueprintFunctionLibrary
 	
 public:
 	
-	static ESHFMovementDirection CalculateCardinalDirection(float PawnYaw, ESHFMovementDirection LastCardinalDirection, float Hysteresis = 10.f);
+	static ESHFMovementDirection CalculateCardinalDirection(float PawnYaw, ESHFMovementDirection CurrentMovementDirection, float Hysteresis = 10.f, float ForwardMin = 0, float
+	                                                        ForwardMax = 0, float BackwardMin = 0, float BackwardMax = 0);
 	static float GetAnimRefSpeed(ESHFGait CurrentGait);
 	
 };

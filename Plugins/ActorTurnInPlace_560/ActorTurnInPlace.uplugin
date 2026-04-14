@@ -10,7 +10,7 @@
 	"DocsURL": "https://github.com/Vaei/TurnInPlace/wiki/",
 	"MarketplaceURL": "",
 	"SupportURL": "",
-	"EngineVersion": "5.7.4",
+	"EngineVersion": "5.7.0",
 	"CanContainContent": true,
 	"Installed": true,
 	"Modules": [
