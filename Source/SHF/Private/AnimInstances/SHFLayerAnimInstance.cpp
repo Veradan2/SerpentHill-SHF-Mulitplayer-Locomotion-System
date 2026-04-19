@@ -14,6 +14,7 @@
 #include "Engine/PackageMapClient.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/GameStateBase.h"
+#include "Kismet/KismetMathLibrary.h"
 #include "Libraries/AnimFunctionLibrary.h"
 
 
@@ -72,7 +73,7 @@ void USHFLayerAnimInstance::UpdateFromMain(const FSHFSharedAnimData& NewData)
 	FSHFAnimInstanceProxy& Proxy = GetProxyOnGameThread<FSHFAnimInstanceProxy>();
 	Proxy.SharedData = NewData;
 	
-	if (Proxy.SharedData.bIsMoving)
+	if (Proxy.SharedData.VelocityData.bIsMoving)
 		IdleActiveTimeStamp = GetWorld()->GetTimeSeconds(); //Reset
 	
 	OnDataUpdated();
@@ -159,7 +160,7 @@ void USHFLayerAnimInstance::Movement_OnBecomeRelevant(const FAnimUpdateContext& 
 		// Hole die Ziel-Animation für den IST-Zustand
 		if (FCardinalAnimationSet* Set = MovementAnims_Cached.Find(SharedData.Gait))
 		{
-			UAnimSequence* InitialAnim = Set->SelectAnim(SharedData.MovementDirection);
+			UAnimSequence* InitialAnim = Set->SelectAnim(SharedData.LocomotionData.MovementDirection);
             
 			// WICHTIG: Hier Blending auf 0.0f setzen!
 			// Das sorgt dafür, dass der Player SOFORT auf dieser AnimArray steht,
@@ -180,7 +181,7 @@ void USHFLayerAnimInstance::Movement_OnUpdate(const FAnimUpdateContext& Context,
 		UAnimSequence* TargetAnim = nullptr;
 		if (FCardinalAnimationSet* Set = MovementAnims_Cached.Find(SharedData.Gait))
 		{
-			TargetAnim = Set->SelectAnim(SharedData.MovementDirection);
+			TargetAnim = Set->SelectAnim(SharedData.LocomotionData.MovementDirection);
 		}
 
 		if (TargetAnim)
@@ -196,7 +197,7 @@ void USHFLayerAnimInstance::Movement_OnUpdate(const FAnimUpdateContext& Context,
 		// 3. PlayRate setzen (Darf jeden Frame passieren, da es die Zeit nicht zurücksetzt)
 		// Lyra Walk ist ca. 160 units/s, Run ca. 380 units/s
 
-		float SafePlayRate = FMath::Max(0.1f, SharedData.GroundSpeed / UAnimFunctionLibrary::GetAnimRefSpeed(SharedData.Gait));
+		float SafePlayRate = FMath::Max(0.1f, SharedData.VelocityData.GroundSpeed / UAnimFunctionLibrary::GetAnimRefSpeed(SharedData.Gait));
 		USequencePlayerLibrary::SetPlayRate(Player, SafePlayRate);
 	}	
 }
@@ -206,7 +207,7 @@ void USHFLayerAnimInstance::Start_OnBecomeRelevant(const FAnimUpdateContext& Con
 {
 	const FSHFAnimInstanceProxy& Proxy = GetProxyOnAnyThread<FSHFAnimInstanceProxy>();
 	
-	ESHFMovementDirection AccelDir = Proxy.SharedData.AccelerationDirection;/*DetermineAccelerationDirection(Proxy);*/ 
+	ESHFMovementDirection AccelDir = Proxy.SharedData.LocomotionData.AccelerationDirection;/*DetermineAccelerationDirection(Proxy);*/ 
 	
 	Start_MaxDistance = 0.f;
 	bStartFinished = false;
@@ -245,7 +246,7 @@ void USHFLayerAnimInstance::Start_OnUpdate(const FAnimUpdateContext& Context, co
 		DistanceTraveled = FVector::Dist2D(Proxy.GetComponentTransform().GetLocation(), StartLocation);
 
 		// 2. Sicherheits-Check: Passt die Animation noch zur Eingabe?
-		ESHFMovementDirection AccelDir = Proxy.SharedData.AccelerationDirection;/*DetermineAccelerationDirection(Proxy);*/
+		ESHFMovementDirection AccelDir = Proxy.SharedData.LocomotionData.AccelerationDirection;/*DetermineAccelerationDirection(Proxy);*/
 		
 		UAnimSequenceBase* CurrentAnim = USequenceEvaluatorLibrary::GetSequence(Eval);
 		UAnimSequenceBase* NewDesiredAnim = StartAnims_Cached.Find(SharedData.Gait)->SelectAnim(AccelDir);
@@ -267,7 +268,7 @@ void USHFLayerAnimInstance::Start_OnUpdate(const FAnimUpdateContext& Context, co
 			UAnimDistanceMatchingLibrary::AdvanceTimeByDistanceMatching(Context, Eval, DistanceTraveled, FName("distance"));
 		else
 		{
-			float VelocityMagnitude = Proxy.SharedData.GroundSpeed;
+			float VelocityMagnitude = Proxy.SharedData.VelocityData.GroundSpeed;
 			float PlayRateMultiplier = FMath::Clamp(VelocityMagnitude / UAnimFunctionLibrary::GetAnimRefSpeed(SharedData.Gait), 0.8f, 1.5f);
 
 			USequenceEvaluatorLibrary::AdvanceTime(Context, Eval, Context.GetContext()->GetDeltaTime()*PlayRateMultiplier);			
@@ -281,7 +282,7 @@ void USHFLayerAnimInstance::Stop_OnBecomeRelevant(const FAnimUpdateContext& Cont
 
 	// 1. Stopp-Punkt im Weltraum vorhersagen (UE 5.7 Signatur)
 	FVector RelativeStopVector = UAnimCharacterMovementLibrary::PredictGroundMovementStopLocation(
-		Proxy.SharedData.CharacterVelocity, 
+		Proxy.SharedData.VelocityData.Velocity, 
 		Proxy.SharedData.MovementConfig.bUseSeparateBrakingFriction, 
 		Proxy.SharedData.MovementConfig.BrakingFriction,
 		Proxy.SharedData.MovementConfig.GroundFriction,
@@ -293,7 +294,7 @@ void USHFLayerAnimInstance::Stop_OnBecomeRelevant(const FAnimUpdateContext& Cont
 	StopLocation = Proxy.GetComponentTransform().GetLocation() + RelativeStopVector;
 
 	// 2. Richtung und Animation bestimmen
-	ESHFMovementDirection StopDir = SharedData.MovementDirection; //DetermineMovementDirection(Proxy);
+	ESHFMovementDirection StopDir = SharedData.LocomotionData.MovementDirection; //DetermineMovementDirection(Proxy);
     
 	if (UAnimSequence* SelectedAnim = StopAnims_Cached.Find(SharedData.Gait)->SelectAnim(StopDir))
 	{
@@ -306,7 +307,7 @@ void USHFLayerAnimInstance::Stop_OnBecomeRelevant(const FAnimUpdateContext& Cont
 			USequenceEvaluatorLibrary::SetExplicitTime(Eval, 0.0f);
 		}
 	}
-	
+	/*
 #if !UE_BUILD_SHIPPING
 	// Zeichnet eine rote Kugel am vorhergesagten Stopp-Punkt für 2 Sekunden
 	DrawDebugSphere(
@@ -330,6 +331,7 @@ void USHFLayerAnimInstance::Stop_OnBecomeRelevant(const FAnimUpdateContext& Cont
 		false, 2.0f, 0, 1.5f
 	);
 #endif
+*/
 }	
 
 		
@@ -366,11 +368,12 @@ void USHFLayerAnimInstance::Stop_OnUpdate(const FAnimUpdateContext& Context, con
 }
 
 
+
 void USHFLayerAnimInstance::Stop_UpdateOrientationAngle(float DeltaSeconds)
 {
 	const FSHFAnimInstanceProxy& Proxy = GetProxyOnAnyThread<FSHFAnimInstanceProxy>();
     
-	FVector Velocity = Proxy.SharedData.CharacterVelocity;
+	FVector Velocity = Proxy.SharedData.VelocityData.Velocity;
     
 	if (Velocity.Size2D() > 5.f)
 	{
@@ -382,7 +385,7 @@ void USHFLayerAnimInstance::Stop_UpdateOrientationAngle(float DeltaSeconds)
         
 		// Der finale Winkel für den Warping-Node (-180 bis 180)
 		float TargetAngle =  FRotator::NormalizeAxis(Velocity.ToOrientationRotator().Yaw - MeshYaw);
-		SharedData.OrientationWarpingLocomotionAngle = FMath::FInterpTo(SharedData.OrientationWarpingLocomotionAngle, TargetAngle, DeltaSeconds, 12.0f);
+		SharedData.WarpingData.OrientationWarpingLocomotionAngle = FMath::FInterpTo(SharedData.WarpingData.OrientationWarpingLocomotionAngle, TargetAngle, DeltaSeconds, 12.0f);
 	}
 }
 
@@ -430,6 +433,19 @@ void USHFLayerAnimInstance::CalculateIdleIndex()
 	}	
 }
 
+float USHFLayerAnimInstance::CalculateLandingTime(float Distance) const
+{
+	// Beispiel: Die Landing-Animation ist 0.5s lang. 
+	// Bei 200 Units Distanz sind wir bei 0.0s (Start der Landevorbereitung).
+	// Bei 0 Units Distanz sind wir bei 0.5s (Impact).
+    	
+	return FMath::GetMappedRangeValueClamped(
+			FVector2D(200.0f, 0.0f), // Input: Distanz vom Boden
+			FVector2D(0.0f, JumpAnimSet_Cached.Land->GetPlayLength()),   // Output: Zeit in der Animation
+			Distance
+		);	
+}
+
 void USHFLayerAnimInstance::SetAnimSet(ESHFEquipMode EquipMode, bool bEnforce)
 {
 	if (CurrentEquipMode != EquipMode || bFirstInit || bEnforce)
@@ -443,6 +459,7 @@ void USHFLayerAnimInstance::SetAnimSet(ESHFEquipMode EquipMode, bool bEnforce)
 			StopAnims_Cached = MovementAnims->StopAnims;
 			TurnInPlaceAnimSet_Cached = MovementAnims->TurnInPlaceAnimSet;
 			TurnInPlaceAnimSetCrouched_Cached = MovementAnims->TurnInPlaceAnimSetCrouched;
+			JumpAnimSet_Cached = MovementAnims->JumpAnimSet;
 		}
 		bFirstInit = false;
 	}
@@ -451,7 +468,7 @@ void USHFLayerAnimInstance::SetAnimSet(ESHFEquipMode EquipMode, bool bEnforce)
 ESHFMovementDirection USHFLayerAnimInstance::DetermineAccelerationDirection(const FSHFAnimInstanceProxy& Proxy)
 {
 	// 1. Wunschrichtung (Welt)
-	FVector Acceleration = Proxy.SharedData.CharacterAcceleration;
+	FVector Acceleration = Proxy.SharedData.AccelerationData.Acceleration;
     
 	if (Acceleration.IsNearlyZero()) {
 		Acceleration = Proxy.GetActorTransform().GetUnitAxis(EAxis::X);
@@ -487,7 +504,7 @@ ESHFMovementDirection USHFLayerAnimInstance::DetermineAccelerationDirection(cons
 
 ESHFMovementDirection USHFLayerAnimInstance::DetermineMovementDirection(const FSHFAnimInstanceProxy& Proxy)
 {
-	FVector Velocity = Proxy.SharedData.CharacterVelocity;
+	FVector Velocity = Proxy.SharedData.VelocityData.Velocity;
 	
 	FRotator MeshRotation = Proxy.GetComponentTransform().Rotator();
 	float ActualVisualYaw = FRotator::NormalizeAxis(MeshRotation.Yaw + 90.0f); 

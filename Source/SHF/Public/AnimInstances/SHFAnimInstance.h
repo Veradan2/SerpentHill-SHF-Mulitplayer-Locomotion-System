@@ -64,8 +64,8 @@ public:
 	
 protected:
 	virtual FAnimInstanceProxy* CreateAnimInstanceProxy() override;
-	
-	
+
+
 	UPROPERTY(BlueprintReadOnly, Transient, Category = "SHF|Core")
 	TObjectPtr<APawn> OwningPawn;
 
@@ -115,8 +115,20 @@ protected:
 	
 
 private:
+	void GatherVelocityData(FVelocityData& OutVelocityData);
+	void GatherAccelerationData(FAccelerationData& OutAccelerationData);
+	void GatherRotationData(FRotationData& OutRotationData);
+	void GatherLocomotionData(FSHFSharedAnimData& OutAnimData, float DeltaSeconds);
+	void GatherCMCStates(FCMCStates& OutCMCStates);
+	
+	
+	
 	void CalculateMovementDirection(float DeltaSeconds, FSHFSharedAnimData& OutData);
 	bool GetReferences();
+	
+	void UpdateJumpFallData(FSHFSharedAnimData& OutData, const FSHFSharedAnimData& OldData, float DeltaSeconds);
+	void TraceGroundDistance(FSHFSharedAnimData& OutData) const;
+	void CalculateLeaningData(FSHFSharedAnimData& OutData, const FSHFSharedAnimData& OldData, float DeltaSeconds) const;
 	
 protected:
 	UPROPERTY(BlueprintReadOnly);
@@ -151,4 +163,6 @@ protected:
 	
 	ESHFGait PreviousMovementGait;
 	ESHFEquipMode PreviousEquipMode;
+	
+	float MaxFallSpeed = 0.f;
 };

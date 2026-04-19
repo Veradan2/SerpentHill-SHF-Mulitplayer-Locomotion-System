@@ -38,6 +38,9 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "SHF|Core", meta = (BlueprintThreadSafe))
 	float Stop_DistanceRemaining = 0.f;
 	
+	UPROPERTY(BlueprintReadOnly, Category = "SHF|Core", meta = (BlueprintThreadSafe))
+	float RelevantAnimTimeRemaining = 1.f;
+
 	
 	virtual void NativeInitializeAnimation() override;
 	virtual void NativeUpdateAnimation(float DeltaSeconds) override;
@@ -82,7 +85,7 @@ protected:
 	void Start_OnUpdate(const FAnimUpdateContext& Context, const FAnimNodeReference& Node);
 	
 	/*
-	 *			Start Sequence Evaluator
+	 *			Stop Sequence Evaluator
 	 */
 	UFUNCTION(BlueprintCallable, Category = "SHF|AnimNodeFunctions", meta = (BlueprintThreadSafe))
 	void Stop_OnBecomeRelevant(const FAnimUpdateContext& Context, const FAnimNodeReference& Node);
@@ -91,7 +94,9 @@ protected:
 	void Stop_OnUpdate(const FAnimUpdateContext& Context, const FAnimNodeReference& Node);
 	
 	
-	
+	/*
+	 *			Jump Land Sequence Evaluator
+	 */
 	
 	
 	// Local copy of the data exchange struct (thread safe access possible)
@@ -134,6 +139,9 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "SHF|Stop")
 	TMap<ESHFGait, FCardinalAnimationSet> StopAnims_Cached;
 	
+	UPROPERTY(BlueprintReadOnly, Category = "SHF|Jump", meta = (BlueprintThreadSafe))	
+	FJumpAnimSet JumpAnimSet_Cached;
+	
 	UPROPERTY(BlueprintReadWrite)
 	int32 IdleIndex = 0;
 	
@@ -145,6 +153,7 @@ private:
 	double IdleActiveTimeStamp = 0.;
 	
 	void CalculateIdleIndex();
+	float CalculateLandingTime(float Distance) const;
 	
 	UPROPERTY()
 	TObjectPtr<AGameStateBase> CachedGameState = nullptr;

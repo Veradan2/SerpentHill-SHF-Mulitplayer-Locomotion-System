@@ -18,32 +18,48 @@ struct FAnimSequenceArray
 };
 
 
+USTRUCT(BlueprintType)
+struct FJumpAnimSet
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (BlueprintThreadSafe))	TObjectPtr<UAnimSequence> Start = nullptr;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (BlueprintThreadSafe)) TObjectPtr<UAnimSequence> StartLoop = nullptr;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (BlueprintThreadSafe))	TObjectPtr<UAnimSequence> Apex = nullptr;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (BlueprintThreadSafe))	TObjectPtr<UAnimSequence> FallLoop = nullptr;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (BlueprintThreadSafe))	TObjectPtr<UAnimSequence> Land = nullptr;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, meta = (BlueprintThreadSafe))	TObjectPtr<UAnimSequence> Recovery = nullptr;
+};
+
 
 USTRUCT(BlueprintType)
 struct FMovementAnimSet
 {
 	GENERATED_BODY()
 	
-	UPROPERTY(EditAnywhere)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	TMap<ESHFGait, TObjectPtr<UAnimSequence>> IdleAnims;
 	
-	UPROPERTY(EditAnywhere)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	TMap<ESHFGait, FAnimSequenceArray> IdleBreakAnims;
 	
-	UPROPERTY(EditAnywhere)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	TMap<ESHFGait, FCardinalAnimationSet> CycleAnims;
 	
-	UPROPERTY(EditAnywhere)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	TMap<ESHFGait, FCardinalAnimationSet> StartAnims;
 	
-	UPROPERTY(EditAnywhere)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	TMap<ESHFGait, FCardinalAnimationSet> StopAnims;
 	
-	UPROPERTY(EditAnywhere)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	FTurnInPlaceAnimSet TurnInPlaceAnimSet;
 	
-	UPROPERTY(EditAnywhere)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	FTurnInPlaceAnimSet TurnInPlaceAnimSetCrouched;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadOnly)
+	FJumpAnimSet JumpAnimSet;
 };
 
 
@@ -57,6 +73,6 @@ class SHF_API UAnimSetAsset : public UPrimaryDataAsset
 	GENERATED_BODY()
 	
 public:	
-	UPROPERTY(EditAnywhere, Category = "SHF|AnimSet")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "SHF|AnimSet")
 	TMap<ESHFEquipMode,FMovementAnimSet> AnimSet;
 };

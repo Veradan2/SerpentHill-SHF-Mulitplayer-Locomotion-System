@@ -3,6 +3,11 @@
 
 #include "Libraries/AnimFunctionLibrary.h"
 
+#include "Animation/AnimCurveTypes.h"
+#include "Animation/AnimSequence.h"
+#include "GameFramework/CharacterMovementComponent.h"
+
+
 
 ESHFMovementDirection UAnimFunctionLibrary::CalculateCardinalDirection(float PawnYaw, ESHFMovementDirection CurrentMovementDirection, const float Hysteresis, float ForwardMin, float
                                                                        ForwardMax, float BackwardMin, float BackwardMax)
@@ -48,3 +53,13 @@ float UAnimFunctionLibrary::GetAnimRefSpeed(ESHFGait CurrentGait)
 {
 	return (CurrentGait == ESHFGait::Walk) ? ANIM_SPEED_WALKING : ANIM_SPEED_JOGGING;
 }
+
+float UAnimFunctionLibrary::PredictTimeToJumpApex(const FVector& PawnVelocity,
+    const UCharacterMovementComponent* MovementComponent)
+{
+    if (MovementComponent->IsFalling())
+        return (0.f - PawnVelocity.Z ) / FMath::Max(0.001f, MovementComponent->GetGravityZ());
+    
+    return 0.f;
+}
+

@@ -9,7 +9,6 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Net/UnrealNetwork.h"
-#include "UniversalObjectLocators/AnimInstanceLocatorFragment.h"
 
 UAnimComponent::UAnimComponent()
 {

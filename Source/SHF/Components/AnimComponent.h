@@ -36,6 +36,9 @@ public:
 	UPROPERTY(EditDefaultsOnly, Category = "SHF|Setup")
 	ESHFGait InitialMovementGait;
 	
+	UPROPERTY(EditAnywhere, Category = "SHF|Config")
+	float MaxAirLeanAngle = 15.f;
+	
 	UFUNCTION(BlueprintCallable, Category = "SHF|Animation")
 	void SetAnimLayerTag(ESHFAnimLayerTag NewTag);
 	

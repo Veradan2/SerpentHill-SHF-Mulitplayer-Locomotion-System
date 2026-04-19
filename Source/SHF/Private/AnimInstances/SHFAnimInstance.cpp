@@ -12,6 +12,7 @@
 #include "Animation/AnimInertializationRequest.h"
 #include "Animation/AnimNodeReference.h"
 #include "AnimInstances/SHFLayerAnimInstance.h"
+#include "Components/CapsuleComponent.h"
 #include "Dataflow/DataflowContent.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -21,7 +22,7 @@
 
 void FSHFAnimInstanceProxy::SetRootYawOffset(float NewYawOffset)
 {
-	SharedData.RootYawOffset = NewYawOffset;
+	SharedData.RotationData.RootYawOffset = NewYawOffset;
 }
 
 void FSHFAnimInstanceProxy::Update(float DeltaSeconds)
@@ -71,47 +72,36 @@ void USHFAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	FSHFAnimInstanceProxy& Proxy = GetProxyOnGameThread<FSHFAnimInstanceProxy>();
 
 	
-	// 1. Paket schnüren
-	FSHFSharedAnimData NewData;
-	NewData.WorldLocation = OwningPawn->GetActorLocation();
 	
-	NewData.CharacterVelocity = OwningPawn->GetVelocity();
-	NewData.GroundSpeed = NewData.CharacterVelocity.Size2D();
-	NewData.bIsMoving = NewData.GroundSpeed > 10.f;
+	// 1. Paket erstellen
+	FSHFSharedAnimData NewData = Proxy.SharedData;
+	NewData.LocationData.WorldLocation = OwningPawn->GetActorLocation();
 	NewData.Gait = AnimComp->GetCurrentMovementGait();
 	NewData.EquipMode = AnimComp->GetCurrentEquipMode();
 	
-	NewData.CharacterAcceleration = MovementCompRef->GetCurrentAcceleration();
-	NewData.bIsAccelerating = NewData.CharacterAcceleration.Size2D() > 0.f;
-	float AccelAmount = NewData.CharacterAcceleration.Size2D() / MovementCompRef->MaxAcceleration;
+	GatherVelocityData(NewData.VelocityData);
+	GatherAccelerationData(NewData.AccelerationData);
+	GatherRotationData(NewData.RotationData);
+	GatherLocomotionData(NewData, DeltaSeconds);
+	GatherCMCStates(NewData.CMCStates);
 	
-	NewData.bShouldPlayExplosiveStart = NewData.bIsAccelerating && (AccelAmount > 0.7f);
-	NewData.bShouldPlayDynamicStop = NewData.GroundSpeed > 150.f;	
+	NewData.StartStopData.bShouldPlayExplosiveStart = NewData.AccelerationData.bIsAccelerating && (NewData.AccelerationData.AccelAmount > 0.7f);
+	NewData.StartStopData.bShouldPlayDynamicStop = NewData.VelocityData.GroundSpeed > 150.f;	
 	
-	NewData.LocomotionAngle = UKismetAnimationLibrary::CalculateDirection(NewData.CharacterVelocity, OwningPawn->GetActorRotation());
-	NewData.SmoothedLocomotionAngle = FMath::FixedTurn(
-		Proxy.SharedData.SmoothedLocomotionAngle, 
-		NewData.LocomotionAngle, 
-		DeltaSeconds * 12.0f 
-		
-	);
 	//NewData.OrientationWarpingLocomotionAngle = -NewData.LocomotionAngle;	//this is calculated by the layers which need the value, LocomotionAngle also works
 	
+	NewData.WarpingData.LocomotionSpeed = NewData.VelocityData.GroundSpeed;
+	NewData.WarpingData.Alpha = FMath::Clamp(NewData.VelocityData.GroundSpeed / 50.f, 0.f, 1.f);
 	
-	NewData.StrideWarpingLocomotionSpeed = NewData.GroundSpeed;
-	NewData.StrideWarpingAlpha = FMath::Clamp(NewData.GroundSpeed / 50.f, 0.f, 1.f);
-	
-	NewData.LastFrameActorRotation = Proxy.SharedData.ActorRotation;
-	NewData.ActorRotation = OwningPawn->GetActorRotation();
-	NewData.DeltaActorYaw = UKismetMathLibrary::NormalizeAxis(NewData.ActorRotation.Yaw - Proxy.SharedData.LastFrameActorRotation.Yaw );
-	NewData.RootYawOffset = Proxy.SharedData.RootYawOffset + NewData.DeltaActorYaw;
 	
 	
 	NewData.CMCStates.bIsCrouching = MovementCompRef->IsCrouching();
 	NewData.CMCStates.bIsFalling = MovementCompRef->IsFalling();
 	NewData.CMCStates.bIsStrafing = !MovementCompRef->bOrientRotationToMovement;
-	NewData.CMCStates.bTransitionFallToJump = NewData.CMCStates.bIsFalling && NewData.CharacterVelocity.Z > 100.0;
-	NewData.CMCStates.bShouldMove = NewData.GroundSpeed > 3.f && MovementCompRef->GetCurrentAcceleration().Size() > 0.f;
+	NewData.CMCStates.bTransitionFallToJump = NewData.CMCStates.bIsFalling && NewData.VelocityData.Velocity.Z > 100.0;
+	//NewData.CMCStates.bShouldMove = NewData.VelocityData.GroundSpeed > 3.f && MovementCompRef->GetCurrentAcceleration().Size() > 0.f;
+	NewData.CMCStates.bMovingOnGround = MovementCompRef->IsMovingOnGround();
+	NewData.CMCStates.bIsFlying = MovementCompRef->IsFlying();
 	
 	NewData.MovementConfig.MaxWalkSpeed = MovementCompRef->MaxWalkSpeed;
 	NewData.MovementConfig.MaxAcceleration = MovementCompRef->MaxAcceleration;
@@ -125,16 +115,13 @@ void USHFAnimInstance::NativeUpdateAnimation(float DeltaSeconds)
 	NewData.MovementState.bGateChanged = CurrentMovementGait != PreviousMovementGait;
 	NewData.MovementState.bEquipModeChanged = CurrentEquipMode != PreviousEquipMode;
 	
-	
 	CalculateMovementDirection(DeltaSeconds, NewData);
-	NewData.LeanAngle = FMath::ClampAngle(NewData.DeltaActorYaw / DeltaSeconds / 5.f, -90.f, 90.f) * (
-		NewData.MovementDirection == ESHFMovementDirection::Backward ? -1.f : 1.f);
-	switch (NewData.Gait)
-	{
-		case ESHFGait::Walk : NewData.LeanBlendSpaceGait = .2; break;
-		case ESHFGait::Run: NewData.LeanBlendSpaceGait = 1.f; break;
-		default: NewData.LeanBlendSpaceGait = 0.f; 
-	}
+	UpdateJumpFallData(NewData, Proxy.SharedData, DeltaSeconds);
+	TraceGroundDistance(NewData);
+	
+	NewData.JumpData.JumpPlayrate = FMath::Clamp(NewData.VelocityData.Velocity.Z / FMath::Max(0.1f, MovementCompRef->JumpZVelocity), 0.8f, 1.5f);
+	
+	CalculateLeaningData(NewData, Proxy.SharedData, DeltaSeconds);
 	
 	/* Daten in den Proxy schreiben */
 
@@ -164,7 +151,7 @@ void USHFAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
 	{
 		if (IsValid(Layer) && Layer->bStartFinished)
 		{
-			Proxy.SharedData.bStartFinished = true;
+			Proxy.SharedData.StartStopData.bStartFinished = true;
 			break;
 		}
 	}
@@ -173,7 +160,7 @@ void USHFAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
 	{
 		if (IsValid(Layer) && (Layer->Stop_DistanceRemaining != 0.f))
 		{
-			Proxy.SharedData.Stop_DistanceRemaining = Layer->Stop_DistanceRemaining;
+			Proxy.SharedData.StartStopData.Stop_DistanceRemaining = Layer->Stop_DistanceRemaining;
 			break;
 		}
 	}
@@ -184,34 +171,42 @@ void USHFAnimInstance::NativeThreadSafeUpdateAnimation(float DeltaSeconds)
 	
 	UTurnInPlaceStatics::ThreadSafeUpdateTurnInPlace(TurnData, bCanUpdateTurnInPlace, Proxy.SharedData.CMCStates.bIsStrafing, TurnOutput);
 	
-	TransitionRules.bIdle2Start = Proxy.SharedData.bShouldPlayExplosiveStart;
-	TransitionRules.bStart2Cycle = FMath::IsNearlyEqual(Proxy.SharedData.GroundSpeed, Proxy.SharedData.MovementConfig.MaxWalkSpeed, 5.f);
+	TransitionRules.bIdle2Start = Proxy.SharedData.StartStopData.bShouldPlayExplosiveStart;
+	TransitionRules.bStart2Cycle = FMath::IsNearlyEqual(Proxy.SharedData.VelocityData.GroundSpeed, Proxy.SharedData.MovementConfig.MaxWalkSpeed, 5.f);
 	TransitionRules.bStart2CycleCond2 = Proxy.SharedData.MovementState.bGateChanged || Proxy.SharedData.MovementState.bEquipModeChanged;
-	TransitionRules.bStop2Start = Proxy.SharedData.bIsAccelerating;
-	TransitionRules.bStart2Stop = !Proxy.SharedData.bIsAccelerating;
-	TransitionRules.bIdle2Cycle = Proxy.SharedData.bIsAccelerating && !Proxy.SharedData.bShouldPlayExplosiveStart;
+	TransitionRules.bStop2Start = Proxy.SharedData.AccelerationData.bIsAccelerating;
+	TransitionRules.bStart2Stop = !Proxy.SharedData.AccelerationData.bIsAccelerating;
+	TransitionRules.bIdle2Cycle = Proxy.SharedData.AccelerationData.bIsAccelerating && !Proxy.SharedData.StartStopData.bShouldPlayExplosiveStart;
 
 	// 1. Der Weg in den Stop (Nur wenn wir schnell genug für die Anim sind)
-	TransitionRules.bCycle2Stop = !Proxy.SharedData.bIsAccelerating && Proxy.SharedData.bShouldPlayDynamicStop;
+	TransitionRules.bCycle2Stop = !Proxy.SharedData.AccelerationData.bIsAccelerating && Proxy.SharedData.StartStopData.bShouldPlayDynamicStop;
 
 	// 2. Der Weg direkt nach Idle (Sanftes Ausrollen ohne Stop-Layer)
 	// WICHTIG: Nur wenn wir NICHT in den Stop-Layer gehen, aber auch nicht mehr beschleunigen.
-	TransitionRules.bCycle2Idle = !Proxy.SharedData.bIsAccelerating && !Proxy.SharedData.bShouldPlayDynamicStop;
+	TransitionRules.bCycle2Idle = !Proxy.SharedData.AccelerationData.bIsAccelerating && !Proxy.SharedData.StartStopData.bShouldPlayDynamicStop;
 
 	// 3. Stop beenden
 	// Wir erhöhen den Schwellenwert leicht, um das Pendeln zu verhindern (Hysterese)
-	TransitionRules.bStop2Idle = Proxy.SharedData.GroundSpeed < 10.f || Proxy.SharedData.Stop_DistanceRemaining < 5.f;
+	TransitionRules.bStop2Idle = Proxy.SharedData.VelocityData.GroundSpeed < 10.f || Proxy.SharedData.StartStopData.Stop_DistanceRemaining < 5.f;
 
 	// 4. Start-Abbruch (Wichtig!)
 	// Wenn wir im Start sind und loslassen, gehen wir je nach Speed in den Stop oder direkt nach Idle
-	TransitionRules.bStart2Stop = !Proxy.SharedData.bIsAccelerating && Proxy.SharedData.bShouldPlayDynamicStop;
+	TransitionRules.bStart2Stop = !Proxy.SharedData.AccelerationData.bIsAccelerating && Proxy.SharedData.StartStopData.bShouldPlayDynamicStop;
 	// Falls wir sehr langsam waren, direkt zurück nach Idle
-	TransitionRules.bStart2Idle = !Proxy.SharedData.bIsAccelerating && !Proxy.SharedData.bShouldPlayDynamicStop;
+	TransitionRules.bStart2Idle = !Proxy.SharedData.AccelerationData.bIsAccelerating && !Proxy.SharedData.StartStopData.bShouldPlayDynamicStop;
+	
+	TransitionRules.bJumpStartLoop2JumpApex = Proxy.SharedData.JumpData.TimeToJumpApex < .4f;
+	TransitionRules.bJumpFallLoop2FallLand = Proxy.SharedData.JumpData.GroundDistance < 200.f;
+	TransitionRules.bFallLandToEndInAir = Proxy.SharedData.CMCStates.bMovingOnGround || Proxy.SharedData.CMCStates.bIsFlying;
+	TransitionRules.bEndInAirToCycle = !Proxy.SharedData.CMCStates.bIsFalling && Proxy.SharedData.AccelerationData.bIsAccelerating;
+	TransitionRules.bEndInAir2Idle = !Proxy.SharedData.CMCStates.bIsFalling && !Proxy.SharedData.AccelerationData.bIsAccelerating;
+	TransitionRules.bJumpSelector2JumpStart = Proxy.SharedData.CMCStates.bIsFalling && Proxy.SharedData.VelocityData.Velocity.Z > 100.f;
+	TransitionRules.bJumpSelector2JumpApex = Proxy.SharedData.CMCStates.bIsFalling;
 }
 
 void USHFAnimInstance::RegisterLayer(USHFLayerAnimInstance* Layer)
 {
-	// Wir räumen erst auf: Alle Layer entfernen, die nicht mehr "Linked" sind
+	// Garbage collecction: Unlink all unused layers (I M P O R T A N T, is causing crashes otherwise) 
 	LinkedLayers.RemoveAll([](TObjectPtr<USHFLayerAnimInstance> L) {
 		return L == nullptr || !L->GetSkelMeshComponent()->GetLinkedAnimLayerInstanceByClass(L->GetClass());
 	});
@@ -318,18 +313,58 @@ void USHFAnimInstance::SetupTurnRecovery(const FAnimUpdateContext& Context, cons
 	TurnInPlaceGraphNodeData.bIsRecoveryTurningRight = TurnInPlaceGraphNodeData.bIsTurningRight;
 }
 
+void USHFAnimInstance::GatherVelocityData(FVelocityData& OutVelocityData)
+{
+	OutVelocityData.Velocity =OwningPawn->GetVelocity();
+	OutVelocityData.GroundSpeed = OutVelocityData.Velocity.Size2D();
+	OutVelocityData.bIsMoving = OutVelocityData.GroundSpeed > 5.f;
+}
+
+void USHFAnimInstance::GatherAccelerationData(FAccelerationData& OutAccelerationData)
+{
+	OutAccelerationData.Acceleration = MovementCompRef->GetCurrentAcceleration();
+	OutAccelerationData.bIsAccelerating = OutAccelerationData.Acceleration.Size2D() > 0.f;
+	OutAccelerationData.AccelAmount = OutAccelerationData.Acceleration.Size2D() / MovementCompRef->MaxAcceleration;
+}
+
+void USHFAnimInstance::GatherRotationData(FRotationData& OutRotationData)
+{
+	OutRotationData.LastFrameActorRotation = OutRotationData.ActorRotation;
+	OutRotationData.ActorRotation = OwningPawn->GetActorRotation();
+	OutRotationData.DeltaActorYaw = UKismetMathLibrary::NormalizeAxis(OutRotationData.ActorRotation.Yaw - OutRotationData.LastFrameActorRotation.Yaw);
+	OutRotationData.RootYawOffset += OutRotationData.DeltaActorYaw;
+}
+
+void USHFAnimInstance::GatherLocomotionData(FSHFSharedAnimData& OutAnimData, float DeltaSeconds)
+{
+	OutAnimData.LocomotionData.MovementAngle = UKismetAnimationLibrary::CalculateDirection(OutAnimData.VelocityData.Velocity, OutAnimData.RotationData.ActorRotation);
+	OutAnimData.LocomotionData.SmoothedMovementAngle = FMath::FixedTurn(OutAnimData.LocomotionData.SmoothedMovementAngle, OutAnimData.LocomotionData.MovementAngle, DeltaSeconds * 12.f);
+}
+
+void USHFAnimInstance::GatherCMCStates(FCMCStates& OutCMCStates)
+{
+	OutCMCStates.bIsFalling = MovementCompRef->IsFalling();
+	OutCMCStates.bIsFlying = MovementCompRef->IsFlying();
+	OutCMCStates.bIsCrouching = MovementCompRef->IsCrouching();
+	OutCMCStates.bIsStrafing = !MovementCompRef->bOrientRotationToMovement;
+	OutCMCStates.bMovingOnGround = MovementCompRef->IsMovingOnGround();
+	/*NewData.CMCStates.bTransitionFallToJump = NewData.CMCStates.bIsFalling && NewData.VelocityData.Velocity.Z > 100.0;
+	NewData.CMCStates.bShouldMove = NewData.VelocityData.GroundSpeed > 3.f && MovementCompRef->GetCurrentAcceleration().Size() > 0.f;*/
+}
+
 void USHFAnimInstance::CalculateMovementDirection(float DeltaSeconds, FSHFSharedAnimData& OutData)
 {
-	OutData.LocomotionAngle = UKismetAnimationLibrary::CalculateDirection(OutData.CharacterVelocity, OutData.ActorRotation);
-	const ESHFMovementDirection NewDir = UAnimFunctionLibrary::CalculateCardinalDirection(OutData.LocomotionAngle, LastMovementDirection, 15.f, -50.f, 50.f, -130.f, 130.f);
-	OutData.MovementDirection = NewDir;
+	OutData.LocomotionData.MovementAngle = UKismetAnimationLibrary::CalculateDirection(OutData.VelocityData.Velocity, OutData.RotationData.ActorRotation);
+	const ESHFMovementDirection NewDir = UAnimFunctionLibrary::CalculateCardinalDirection(OutData.LocomotionData.MovementAngle, LastMovementDirection, 15.f, -50.f, 50.f, -130.f, 130.f);
+	OutData.LocomotionData.MovementDirection = NewDir;
 	LastMovementDirection = NewDir;
 	
-	OutData.AccelerationAngle = UKismetAnimationLibrary::CalculateDirection(OutData.CharacterAcceleration, OutData.ActorRotation);
-	const ESHFMovementDirection AccelDir = UAnimFunctionLibrary::CalculateCardinalDirection(OutData.AccelerationAngle, LastAccelerationDirection, 15.f, -50.f, 50.f, -130.f, 130.f);
-	OutData.AccelerationDirection = AccelDir;
+	OutData.LocomotionData.AccelerationAngle = UKismetAnimationLibrary::CalculateDirection(OutData.AccelerationData.Acceleration, OutData.RotationData.ActorRotation);
+	const ESHFMovementDirection AccelDir = UAnimFunctionLibrary::CalculateCardinalDirection(OutData.LocomotionData.AccelerationAngle, LastAccelerationDirection, 15.f, -50.f, 50.f, -130.f, 130.f);
+	OutData.LocomotionData.AccelerationDirection = AccelDir;
 	LastAccelerationDirection = AccelDir;
 }
+
 
 
 /**
@@ -346,6 +381,88 @@ bool USHFAnimInstance::GetReferences()
 	if (IsValid(CharacterRef))
 		MovementCompRef = CharacterRef->GetCharacterMovement();
 	return IsValid(CharacterRef) && IsValid(MovementCompRef);
+}
+
+void USHFAnimInstance::UpdateJumpFallData(FSHFSharedAnimData& OutData, const FSHFSharedAnimData& OldData, float DeltaSeconds)
+{
+	if (OutData.CMCStates.bIsFalling)
+	{
+		OutData.JumpData.TimeToJumpApex = UAnimFunctionLibrary::PredictTimeToJumpApex(OutData.VelocityData.Velocity, MovementCompRef);
+		MaxFallSpeed = FMath::Min(MaxFallSpeed, OutData.VelocityData.Velocity.Z);
+	} else if (OldData.CMCStates.bIsFalling)
+	{
+		OutData.JumpData.LandingImpactAlpha = FMath::GetMappedRangeValueClamped(FVector2D(-200.f, -1000.f), FVector2D(0.f, 1.f), MaxFallSpeed);
+		MaxFallSpeed = 0.f;
+	} else
+	{
+		OutData.JumpData.LandingImpactAlpha = FMath::FInterpTo(OldData.JumpData.LandingImpactAlpha, 0.0f, DeltaSeconds, 4.0f);
+	}
+}
+
+
+void USHFAnimInstance::TraceGroundDistance(FSHFSharedAnimData& OutData) const
+{
+	if (!OutData.CMCStates.bIsFalling || OutData.VelocityData.Velocity.Z > 50.f) return; //TODO - Maybe only if VelZ > 0 ???
+	
+	FHitResult OutHit;
+	FVector StartLocation = OutData.LocationData.WorldLocation;
+	
+	if (UCapsuleComponent* Capsule = CharacterRef->GetCapsuleComponent())
+	{
+		const float CapsuleHeightWithOffset = Capsule->GetScaledCapsuleHalfHeight() + 20.f;
+		StartLocation += (-CapsuleHeightWithOffset) * CharacterRef->GetActorUpVector();
+	}
+	FVector EndLocation = StartLocation + (CharacterRef->GetActorUpVector() * FVector(-1000.f));
+	FCollisionQueryParams QueryParams;
+	QueryParams.AddIgnoredActor(GetOwningActor());
+	
+	if (GetWorld()->LineTraceSingleByChannel(OutHit, StartLocation, EndLocation, ECC_Visibility, QueryParams))
+		OutData.JumpData.GroundDistance = OutHit.Distance;
+	
+	//DrawDebugLine(GetWorld(), StartLocation, EndLocation, bResult ? FColor::Red : FColor::Green, true, 0.2f);
+}
+
+void USHFAnimInstance::CalculateLeaningData(FSHFSharedAnimData& OutData, const FSHFSharedAnimData& OldData,
+	float DeltaSeconds) const
+{
+	float TargetLeanAngle = OutData.RotationData.DeltaActorYaw * 7.0f;
+	if (OutData.LocomotionData.MovementDirection == ESHFMovementDirection::Backward)
+		TargetLeanAngle *= -1.f;
+	
+	/*float TargetLeanAngle = FMath::ClampAngle(OutData.RotationData.DeltaActorYaw / DeltaSeconds / 5.f, -90.f, 90.f) * (
+		OutData.LocomotionData.MovementDirection == ESHFMovementDirection::Backward ? -1.f : 1.f);*/
+	
+	float GaitScale = 0.f;
+	switch (OutData.Gait)
+	{
+		case ESHFGait::Walk: GaitScale = 0.2f; break;
+		case ESHFGait::Run: GaitScale = 1.0f; break;
+		case ESHFGait::Crouch: GaitScale = 0.2f; break;
+	}
+	OutData.LeaningData.BlendSpaceGait = GaitScale;
+	
+	// Interpolation (Glättung)
+	OutData.LeaningData.Angle = FMath::FInterpTo(OldData.LeaningData.Angle, TargetLeanAngle, DeltaSeconds, 6.0f);		
+	
+	// --- Luft-Leaning (Air Lean) ---
+	FRotator TargetRotation;
+	if (OutData.CMCStates.bIsFalling)
+	{
+		FVector LocalVel = OwningPawn->GetActorRotation().UnrotateVector(OutData.VelocityData.Velocity);
+		const float MaxAngle = AnimComp->MaxAirLeanAngle;
+
+		const float TargetRoll = (LocalVel.Y / MovementCompRef->MaxWalkSpeed) * MaxAngle;
+		const float TargetPitch = (OutData.VelocityData.Velocity.Z / 1000.f) * -MaxAngle;
+
+		TargetRotation = FRotator(TargetPitch, 0.f, TargetRoll);
+	}
+	else 
+	{
+		// Am Boden nutzen wir nur den Yaw-Lean (als Roll-Rotation)
+		TargetRotation = FRotator(0.f, 0.f, OutData.LeaningData.Angle);
+	}	
+	// Finale Rotation glätten
+	OutData.LeaningData.Rotation = FMath::RInterpTo(OldData.LeaningData.Rotation, TargetRotation, DeltaSeconds, 5.0f);
 }
 
 
